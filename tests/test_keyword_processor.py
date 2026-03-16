@@ -2,7 +2,6 @@
 Unit tests for KeywordProcessor (improvement #17).
 """
 
-import pytest
 from utils.keyword_processor import KeywordProcessor
 
 

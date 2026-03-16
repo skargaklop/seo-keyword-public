@@ -2,7 +2,6 @@
 Unit tests for URLValidator (improvement #17).
 """
 
-import pytest
 from utils.validator import URLValidator, validate_api_keys
 
 

@@ -34,19 +34,18 @@ from tenacity import RetryCallState
 
 # SDK Imports with safe fallbacks if not installed
 try:
-    from openai import OpenAI, OpenAIError
+    from openai import OpenAI
 except ImportError:
     OpenAI = None
 
 try:
-    from anthropic import Anthropic, APIError as AnthropicAPIError
+    from anthropic import Anthropic
 except ImportError:
     Anthropic = None
 
 try:
     from google import genai
     from google.genai import types
-    from google.genai.errors import APIError as GoogleAPIError
 except ImportError:
     genai = None
 

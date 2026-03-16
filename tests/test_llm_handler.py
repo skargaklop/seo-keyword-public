@@ -2,7 +2,6 @@
 Unit tests for LLMHandler runtime behavior and response cleanup.
 """
 
-import os
 from types import SimpleNamespace
 
 import pytest

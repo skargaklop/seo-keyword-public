@@ -147,6 +147,7 @@ class TestGoogleAdsHandler:
     ) -> None:
         fake_client = _FakeClient()
         fake_rates = _FakeCurrencyRateService()
+        monkeypatch.setenv("GOOGLE_ADS_CUSTOMER_ID", "1234567890")
         monkeypatch.setattr(
             GoogleAdsHandler,
             "_init_client",
@@ -172,7 +173,7 @@ class TestGoogleAdsHandler:
         )
         assert fake_client.google_ads_service.search_calls == [
             (
-                handler.customer_id,
+                "1234567890",
                 "SELECT customer.currency_code FROM customer LIMIT 1",
             )
         ]

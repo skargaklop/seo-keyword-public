@@ -9,9 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-# Project root directory for resolving relative paths
-_BASE_DIR = Path(__file__).parent.parent
-
 import pandas as pd
 import streamlit as st
 
@@ -26,6 +23,9 @@ from utils.pipeline import (
     KEYWORD_SEED_SOURCE_URL,
     run_llm_keyword_stage_from_checkpoint,
 )
+
+# Project root directory for resolving relative paths
+_BASE_DIR = Path(__file__).parent.parent
 
 
 def _build_history_signature(
