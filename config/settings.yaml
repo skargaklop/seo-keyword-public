@@ -1,0 +1,96 @@
+retry:
+  max_attempts: 4
+  delay_seconds: 4
+  backoff_factor: 1.6
+llm:
+  fallback_provider: openrouter
+  fallback_model: openrouter/free
+  timeout_seconds: 180
+  max_keywords_per_url: 20
+  generation_language: Russian
+  delay_between_requests_seconds: 2
+  models:
+    google: gemini-3-flash-preview
+    openai: gpt-5.2
+    anthropic: claude-sonnet-4-6
+    xai: grok-4-1-fast-reasoning
+    groq: openai/gpt-oss-120b
+    deepseek: deepseek-chat
+    minimax: MiniMax-M2.5
+    moonshot: moonshot/kimi-k2.5
+    openrouter: openrouter/free
+    cerebras: gpt-oss-120b
+    zai: glm-4.7
+  prompts:
+    keyword_extraction: 'You are an SEO expert. Analyze the webpage content and extract
+      {max_keywords} high-intent commercial keywords suitable for Google Ads campaigns
+      in RUSSIAN and UKRAINIAN.
+
+
+      REQUIREMENTS:
+
+      - Focus on transactional/commercial intent (buy, price, order, delivery)
+
+      - Phrases of 2-4 words preferred
+
+      - STRICTLY ONLY Russian or Ukrainian language
+
+      - Avoid informational or generic terms (about, main, home)
+
+      - Return ONLY a comma-separated list. No numbering, no introduction.
+
+
+      Example Output:
+
+      купить кофемашину киев, кава в зернах ціна, профессиональные кофемолки, оренда
+      кавоварок'
+    seo_description: "You are a professional SEO Copywriter who writes for humans,\
+      \ not robots.\n\nTASK:\nWrite a category or product description text based on\
+      \ the provided page content and target keywords. The text must be written strictly\
+      \ in {language} language.\n\nREQUIREMENTS:\n1. STYLE: Simple, engaging, human-like\
+      \ language. Avoid complex sentences and \"AI-sounding\" phrases. Write in {language}.\n\
+      2. FORMAT: Use ONLY these HTML tags for formatting: <p>, <b> (for accents, not\
+      \ keywords), <br/>, <u>, <i>.\n3. KEYWORDS: Naturally integrate the provided\
+      \ high-volume keywords.\n4. LSI: Use Latent Semantic Indexing (LSI) terms naturally.\n\
+      5. STRUCTURE:\n   - Engaging introduction.\n   - Main body describing the value/features.\n\
+      \   - Conclusion.\n   - **FAQ SECTION**: At the very end, strictly add a section\
+      \ header \"<h3>FAQ</h3>\" (or <b>FAQ</b> if h3 not allowed, use <b>) followed\
+      \ by 3-5 relevant questions and answers based on the keywords and content.\n\
+      \nINPUT KEYWORDS (incorporate naturally):\n{keywords_list}\n\nRefrain from using\
+      \ \"In conclusion\", \"In this article\", etc. Just write the content."
+keywords:
+  allowed_languages:
+  - ru
+  - uk
+  min_keyword_length: 3
+scraping:
+  timeout_seconds: 30
+  max_urls_per_batch: 20
+cleanup:
+  max_age_days: 30
+logging:
+  app_level: INFO
+  console_enabled: true
+  console_level: INFO
+  api_enabled: true
+  api_level: ERROR
+  api_retention_days: 30
+  error_level: ERROR
+  log_test_runs: false
+history:
+  retention_days: 30
+uploads:
+  max_file_size_mb: 5
+  max_rows: 1000
+google_ads:
+  location_id: '2804'
+  language_id:
+  - '1031'
+  - '1036'
+  currency_code: UAH
+  max_keywords_per_request: 1000
+ui:
+  language: ru
+  provider: Cerebras
+  model: gpt-oss-120b
+  max_keywords: 50
