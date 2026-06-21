@@ -1,15 +1,26 @@
-"""
-Shared URL safety helpers for validation and scraping.
-"""
+# MODULE_CONTRACT: utils/url_safety
+# Purpose: Shared URL safety helpers for validation and scraping.
+# Rationale: Keep the module boundary explicit for GRACE adoption and review.
+# Dependencies: ipaddress, socket, urllib.parse
+# Exports: URLSafetyError, BLOCKED_HOSTNAMES, BLOCKED_IPS, ALLOWED_SCHEMES, resolve_hostname_ips, validate_safe_url_with_ips, validate_safe_url
+# LINKS: requirements.xml#UC-001, development-plan.xml#MOD-001
+# MODULE_MAP: utils/url_safety.py
+# Public Functions: exported callables and classes defined in this module
+# Private Helpers: internal helpers and private methods defined in this module
+# Key Semantic Blocks: main workflow paths and state transitions in this module
+# Critical Flows: preserve existing runtime behavior and integrations
+# Verification: python -m py_compile, python -m ruff check ., python -m pytest -q
+# CHANGE_SUMMARY: Added file-local module metadata and declaration contracts.
 
 import ipaddress
 import socket
 from urllib.parse import ParseResult, urlparse
 
-
+# CLASS_CONTRACT: URLSafetyError
+# Purpose: Signal blocked or unresolved URLs before network fetching.
+# LINKS: requirements.xml#UC-001
 class URLSafetyError(ValueError):
-    """Raised when a URL is not safe to fetch."""
-
+    pass
 
 BLOCKED_HOSTNAMES = {
     "localhost",
@@ -20,10 +31,15 @@ BLOCKED_IPS = {
     "169.254.169.254",
 }
 ALLOWED_SCHEMES = {"http", "https"}
-
-
+# FUNCTION_CONTRACT: resolve_hostname_ips
+# Purpose: Implement the resolve hostname ips helper for this module.
+# Input: hostname (str)
+# Output: list[str]
+# Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+# Business Rules: Preserves the current validation and control flow for this call path.
+# Failure Modes: Propagates upstream exceptions and existing fallback paths.
+# LINKS: requirements.xml#UC-001
 def resolve_hostname_ips(hostname: str) -> list[str]:
-    """Resolve a hostname into unique IP addresses."""
     try:
         parsed_ip = ipaddress.ip_address(hostname)
         return [str(parsed_ip)]
@@ -45,8 +61,14 @@ def resolve_hostname_ips(hostname: str) -> list[str]:
         raise URLSafetyError(f"Host resolution failed: {hostname}")
 
     return ips
-
-
+# FUNCTION_CONTRACT: _is_blocked_ip
+# Purpose: Implement the  is blocked ip helper for this module.
+# Input: ip_value (str)
+# Output: bool
+# Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+# Business Rules: Preserves the current validation and control flow for this call path.
+# Failure Modes: Propagates upstream exceptions and existing fallback paths.
+# LINKS: requirements.xml#UC-001
 def _is_blocked_ip(ip_value: str) -> bool:
     ip_obj = ipaddress.ip_address(ip_value)
     return bool(
@@ -59,13 +81,18 @@ def _is_blocked_ip(ip_value: str) -> bool:
         or ip_obj.is_unspecified
         or getattr(ip_obj, "is_site_local", False)
     )
-
-
+# FUNCTION_CONTRACT: validate_safe_url_with_ips
+# Purpose: Implement the validate safe url with ips helper for this module.
+# Input: url (str), resolve_dns (bool = True)
+# Output: tuple[ParseResult, list[str]]
+# Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+# Business Rules: Preserves the current validation and control flow for this call path.
+# Failure Modes: Propagates upstream exceptions and existing fallback paths.
+# LINKS: requirements.xml#UC-001
 def validate_safe_url_with_ips(
     url: str,
     resolve_dns: bool = True,
 ) -> tuple[ParseResult, list[str]]:
-    """Validate that a URL is safe to fetch and optionally return resolved safe IPs."""
     if not url:
         raise URLSafetyError("Empty URL")
 
@@ -101,9 +128,14 @@ def validate_safe_url_with_ips(
             )
 
     return parsed, resolved_ips
-
-
+# FUNCTION_CONTRACT: validate_safe_url
+# Purpose: Implement the validate safe url helper for this module.
+# Input: url (str), resolve_dns (bool = True)
+# Output: ParseResult
+# Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+# Business Rules: Preserves the current validation and control flow for this call path.
+# Failure Modes: Propagates upstream exceptions and existing fallback paths.
+# LINKS: requirements.xml#UC-001
 def validate_safe_url(url: str, resolve_dns: bool = True) -> ParseResult:
-    """Validate that a URL is safe to fetch."""
     parsed, _ = validate_safe_url_with_ips(url, resolve_dns=resolve_dns)
     return parsed

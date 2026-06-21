@@ -1,0 +1,6 @@
+{
+  "url": "https://trends.google.com/trends/explore?q=seo",
+  "content": ")]}'\n{\"widgets\":[{\"id\":\"TIMESERIES_GRAPH_0\",\"token\":\"token\",\"request\":{\"comparisonItem\":[{\"keyword\":\"seo\"}]},\"type\":\"timeseries\"},{\"id\":\"RELATED_QUERIES_0\",\"token\":\"token-queries\",\"request\":{\"comparisonItem\":[{\"keyword\":\"seo\"}]},\"type\":\"related_queries\"},{\"id\":\"RELATED_TOPICS_0\",\"token\":\"token-topics\",\"request\":{\"comparisonItem\":[{\"keyword\":\"seo\"}]},\"type\":\"related_topics\"},{\"id\":\"GEO_MAP_0\",\"token\":\"token-region\",\"request\":{\"comparisonItem\":[{\"keyword\":\"seo\"}]},\"type\":\"geo\"}],\"default\":{\"timelineData\":[{\"time\":\"1704067200\",\"formattedTime\":\"Jan 2024\",\"value\":[75]}],\"rankedList\":[{\"formattedRankType\":\"Top\",\"rankedKeyword\":[{\"query\":\"what is seo\",\"value\":100}]},{\"formattedRankType\":\"Rising\",\"rankedKeyword\":[{\"query\":\"seo tools\",\"value\":\"Breakout\"}]}],\"geoMapData\":[{\"geoName\":\"California\",\"value\":[100]}]}}",
+  "format": "json",
+  "status": 200
+}

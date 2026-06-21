@@ -7,7 +7,9 @@ from utils.scraper import WebScraper
 from utils.url_safety import URLSafetyError, validate_safe_url
 
 
+# Purpose: TestValidateSafeUrl implementation
 class TestValidateSafeUrl:
+    # Purpose: Test allows public http url
     def test_allows_public_http_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "utils.url_safety.resolve_hostname_ips",
@@ -33,10 +35,12 @@ class TestValidateSafeUrl:
             "ftp://example.com",
         ],
     )
+    # Purpose: Test blocks known unsafe targets
     def test_blocks_known_unsafe_targets(self, url: str) -> None:
         with pytest.raises(URLSafetyError):
             validate_safe_url(url)
 
+    # Purpose: Test blocks domains resolving to private addresses
     def test_blocks_domains_resolving_to_private_addresses(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -48,6 +52,7 @@ class TestValidateSafeUrl:
         with pytest.raises(URLSafetyError):
             validate_safe_url("https://internal.example")
 
+    # Purpose: Test scraper rejects connection when peer ip differs from validated dns
     def test_scraper_rejects_connection_when_peer_ip_differs_from_validated_dns(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -56,7 +61,9 @@ class TestValidateSafeUrl:
             lambda hostname: ["93.184.216.34"],
         )
 
+        # Purpose:  FakeResponse implementation
         class _FakeResponse:
+            # Purpose:   init   implementation
             def __init__(self) -> None:
                 sock = SimpleNamespace(getpeername=lambda: ("10.0.0.7", 443))
                 self.raw = SimpleNamespace(_connection=SimpleNamespace(sock=sock))
@@ -65,19 +72,26 @@ class TestValidateSafeUrl:
                 self.headers = {}
                 self.text = "<html><body>ok</body></html>"
 
+            # Purpose: raise for status implementation
             def raise_for_status(self) -> None:
                 return None
 
+            # Purpose: close implementation
             def close(self) -> None:
                 return None
 
+        # Purpose:  FakeSession implementation
         class _FakeSession:
+            # Purpose:   enter   implementation
             def __enter__(self):
                 return self
 
+            # Purpose:   exit   implementation
             def __exit__(self, exc_type, exc, tb):
                 return None
 
+            # Purpose: get implementation
+            # Purpose: get implementation
             @staticmethod
             def get(*args, **kwargs):
                 return _FakeResponse()

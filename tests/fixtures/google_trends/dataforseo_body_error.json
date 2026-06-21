@@ -1,0 +1,15 @@
+{
+  "status_code": 40005,
+  "status_message": "Insufficient balance.",
+  "tasks_count": 1,
+  "tasks_error": 1,
+  "tasks": [
+    {
+      "id": "task-error-001",
+      "status_code": 40005,
+      "status_message": "Insufficient balance.",
+      "result_count": 0,
+      "result": []
+    }
+  ]
+}

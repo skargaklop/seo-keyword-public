@@ -1,3 +1,4 @@
+# Test coverage for modules: MOD-001,MOD-005
 """
 Unit tests for scraper metadata extraction.
 """
@@ -12,7 +13,9 @@ import requests
 from utils.scraper import ScrapedContent, WebScraper
 
 
+# Purpose: TestWebScraperMetadata implementation
 class TestWebScraperMetadata:
+    # Purpose: Test extracts meta title description and keywords
     def test_extracts_meta_title_description_and_keywords(self) -> None:
         html = """
         <html>
@@ -40,6 +43,7 @@ class TestWebScraperMetadata:
         assert "Meta description: Best product for testing SEO extraction." in result.text
         assert "Meta keywords: seo, keyword research, ad campaigns" in result.text
 
+    # Purpose: Test uses metadata fallback when body text is short
     def test_uses_metadata_fallback_when_body_text_is_short(self) -> None:
         html = """
         <html>
@@ -61,6 +65,7 @@ class TestWebScraperMetadata:
         assert "Meta title: Fallback Title" in result.text
         assert "Meta keywords: fallback, metadata" in result.text
 
+    # Purpose: Test fails when text and metadata are missing
     def test_fails_when_text_and_metadata_are_missing(self) -> None:
         html = "<html><head></head><body>tiny</body></html>"
 
@@ -69,28 +74,37 @@ class TestWebScraperMetadata:
         assert result.success is False
         assert result.error == "Insufficient text extracted"
 
+    # Purpose: Test rejects redirect to private ip
     def test_rejects_redirect_to_private_ip(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Purpose:  RedirectResponse implementation
         class _RedirectResponse:
             is_redirect = True
             is_permanent_redirect = False
             headers = {"Location": "http://10.0.0.1/private"}
             status_code = 302
 
+            # Purpose: raise for status implementation
             def raise_for_status(self) -> None:
                 return None
 
+            # Purpose: close implementation
             def close(self) -> None:
                 return None
 
+        # Purpose:  FakeSession implementation
         class _FakeSession:
+            # Purpose:   enter   implementation
             def __enter__(self):
                 return self
 
+            # Purpose:   exit   implementation
             def __exit__(self, exc_type, exc, tb) -> bool:
                 return False
 
+            # Purpose: get implementation
+            # Purpose: get implementation
             @staticmethod
             def get(*args, **kwargs):
                 return _RedirectResponse()
@@ -101,6 +115,7 @@ class TestWebScraperMetadata:
         with pytest.raises(ValueError):
             WebScraper._fetch_url("https://example.com")
 
+    # Purpose: Test fetch url retries without ssl verification on certificate error
     def test_fetch_url_retries_without_ssl_verification_on_certificate_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -111,29 +126,38 @@ class TestWebScraperMetadata:
 
         calls = []
 
+        # Purpose:  SuccessfulResponse implementation
         class _SuccessfulResponse:
             is_redirect = False
             is_permanent_redirect = False
             headers = {}
             text = "<html><body>ok</body></html>"
 
+            # Purpose:   init   implementation
             def __init__(self) -> None:
                 sock = SimpleNamespace(getpeername=lambda: ("93.184.216.34", 443))
                 self.raw = SimpleNamespace(_connection=SimpleNamespace(sock=sock))
 
+            # Purpose: raise for status implementation
             def raise_for_status(self) -> None:
                 return None
 
+            # Purpose: close implementation
             def close(self) -> None:
                 return None
 
+        # Purpose:  FakeSession implementation
         class _FakeSession:
+            # Purpose:   enter   implementation
             def __enter__(self):
                 return self
 
+            # Purpose:   exit   implementation
             def __exit__(self, exc_type, exc, tb) -> bool:
                 return False
 
+            # Purpose: get implementation
+            # Purpose: get implementation
             @staticmethod
             def get(*args, **kwargs):
                 calls.append(
@@ -158,9 +182,11 @@ class TestWebScraperMetadata:
             {"verify": False, "stream": True},
         ]
 
+    # Purpose: Test async scraper falls back to sync on certificate error
     def test_async_scraper_falls_back_to_sync_on_certificate_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Purpose:  raise ssl implementation
         async def _raise_ssl(*args, **kwargs):
             raise ssl.SSLCertVerificationError(
                 1, "certificate verify failed: unable to get local issuer certificate"

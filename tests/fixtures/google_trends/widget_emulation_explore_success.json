@@ -1,0 +1,56 @@
+{
+  "widgets": [
+    {
+      "id": "TIMESERIES_GRAPH_0",
+      "token": "timeseries-token",
+      "request": {
+        "comparisonItem": [
+          {
+            "keyword": "seo",
+            "geo": "US",
+            "time": "today 12-m"
+          }
+        ]
+      }
+    },
+    {
+      "id": "RELATED_QUERIES_0",
+      "token": "related-queries-token",
+      "request": {
+        "comparisonItem": [
+          {
+            "keyword": "seo",
+            "geo": "US",
+            "time": "today 12-m"
+          }
+        ]
+      }
+    },
+    {
+      "id": "RELATED_TOPICS_0",
+      "token": "related-topics-token",
+      "request": {
+        "comparisonItem": [
+          {
+            "keyword": "seo",
+            "geo": "US",
+            "time": "today 12-m"
+          }
+        ]
+      }
+    },
+    {
+      "id": "GEO_MAP_0",
+      "token": "geo-token",
+      "request": {
+        "comparisonItem": [
+          {
+            "keyword": "seo",
+            "geo": "US",
+            "time": "today 12-m"
+          }
+        ]
+      }
+    }
+  ]
+}

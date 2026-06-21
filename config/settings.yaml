@@ -1,13 +1,15 @@
 retry:
-  max_attempts: 4
+  max_attempts: 3
   delay_seconds: 4
-  backoff_factor: 1.6
+  backoff_factor: 1.5
 llm:
   fallback_provider: openrouter
   fallback_model: openrouter/free
   timeout_seconds: 180
   max_keywords_per_url: 20
   generation_language: Russian
+  keyword_llm_generation_language: Ukrainian
+  page_type: product
   delay_between_requests_seconds: 2
   models:
     google: gemini-3-flash-preview
@@ -22,42 +24,183 @@ llm:
     cerebras: gpt-oss-120b
     zai: glm-4.7
   prompts:
-    keyword_extraction: 'You are an SEO expert. Analyze the webpage content and extract
-      {max_keywords} high-intent commercial keywords suitable for Google Ads campaigns
-      in RUSSIAN and UKRAINIAN.
-
-
-      REQUIREMENTS:
-
-      - Focus on transactional/commercial intent (buy, price, order, delivery)
-
-      - Phrases of 2-4 words preferred
-
-      - STRICTLY ONLY Russian or Ukrainian language
-
-      - Avoid informational or generic terms (about, main, home)
-
-      - Return ONLY a comma-separated list. No numbering, no introduction.
-
-
-      Example Output:
-
-      купить кофемашину киев, кава в зернах ціна, профессиональные кофемолки, оренда
-      кавоварок'
-    seo_description: "You are a professional SEO Copywriter who writes for humans,\
-      \ not robots.\n\nTASK:\nWrite a category or product description text based on\
-      \ the provided page content and target keywords. The text must be written strictly\
-      \ in {language} language.\n\nREQUIREMENTS:\n1. STYLE: Simple, engaging, human-like\
-      \ language. Avoid complex sentences and \"AI-sounding\" phrases. Write in {language}.\n\
-      2. FORMAT: Use ONLY these HTML tags for formatting: <p>, <b> (for accents, not\
-      \ keywords), <br/>, <u>, <i>.\n3. KEYWORDS: Naturally integrate the provided\
-      \ high-volume keywords.\n4. LSI: Use Latent Semantic Indexing (LSI) terms naturally.\n\
-      5. STRUCTURE:\n   - Engaging introduction.\n   - Main body describing the value/features.\n\
-      \   - Conclusion.\n   - **FAQ SECTION**: At the very end, strictly add a section\
-      \ header \"<h3>FAQ</h3>\" (or <b>FAQ</b> if h3 not allowed, use <b>) followed\
-      \ by 3-5 relevant questions and answers based on the keywords and content.\n\
-      \nINPUT KEYWORDS (incorporate naturally):\n{keywords_list}\n\nRefrain from using\
-      \ \"In conclusion\", \"In this article\", etc. Just write the content."
+    keyword_extraction: "SEO\nPPC\nkeywords\nYou are a senior SEO and PPC specialist\
+      \ for a CIS e-commerce market. Your task is to extract {max_keywords} high-intent\
+      \ commercial keywords from the provided webpage content for Google Ads campaigns\
+      \ targeting Russian and Ukrainian speakers.\nDon't try to come up with suitable\
+      \ or similar words; just extract the existing keywords.\n\nKEYWORD SELECTION\
+      \ CRITERIA:\n\n1. INTENT — Include ONLY transactional and commercial-investigation\
+      \ phrases like:\n   - Purchase intent: buy, order, shop, купити, замовити, придбати,\
+      \ купить, заказать, приобрести\n   - Price/comparison intent: price, cheap,\
+      \ deal, discount, ціна, вартість, цена, стоимость, дешево, недорого, зі знижкою,\
+      \ акція, распродажа\n   - Delivery/availability: free shipping, in stock, з\
+      \ доставкою, доставка, самовивіз, в наявності, є в наявності, в наличии\n  \
+      \ - Local/geo modifiers: (only where local demand is relevant): city names,\
+      \ country names from the content context\n   - Product specificity: brand names,\
+      \ model numbers, technical specs, size/capacity variants found in the content\n\
+      \   - and so on\n\n2. PHRASE LENGTH — Prefer 2–4 word phrases. Single generic\
+      \ nouns are unadvisable. Phrases of 5+ words only if they represent a clear\
+      \ high-volume long-tail query (e.g., product model + geo + price).\n\n3. LANGUAGE\
+      \ RULES:\n   - Output keywords in English, Russian, AND Ukrainian where natural\
+      \ commercial demand exists.\n   - Do NOT mix languages within a single keyword\
+      \ phrase.\n   - Do NOT transliterate (no \"кофемашина nespresso\" mixing scripts\
+      \ — use Cyrillic product names or keep brand names in Latin).\n   - Ukrainian\
+      \ keywords must use genuine Ukrainian phrasing, not word-for-word translations\
+      \ from Russian.\n   - English keywords follow SEO and Google Ads best practices:\
+      \ US/UK commercial phrasing, no British/American spelling duplicates unless\
+      \ intent differs.\n\n4. EXCLUSIONS — Do NOT include:\n   - Informational queries:\
+      \ how to choose, review, what is, як вибрати, огляд, відгуки, обзор, сравнение,\
+      \ що таке\n   - Navigation queries: about us, contact, головна, про нас, контакти,\
+      \ головна сторінка\n   - Single generic words with no modifier:coffee, table,\
+      \ phone, кава, стіл, телефон\n   - Duplicate meaning: do not include both \"\
+      buy\" and \"purchase\" versions of the same phrase unless search intent meaningfully\
+      \ differs\n\nOUTPUT FORMAT:\nReturn ONLY a comma-separated list of keywords.\
+      \ No numbering, no headers, no explanation, no punctuation other than commas.\n\
+      \nEXAMPLE OUTPUT (coffee equipment niche):\nbuy espresso machine online, commercial\
+      \ coffee grinder price, coffee machine free shipping, купити кавомашину Київ,\
+      \ кавоварка ціна, замовити кавоварку з доставкою, кава в зернах оптом, купить\
+      \ кофемашину Киев, кофемолка цена Украина, профессиональная кофеварка недорого,\
+      \ аренда кофемашины Харьков"
+    seo_description: "SEO\nLSI\nkeywords\nYou are a professional SEO Copywriter who\
+      \ writes for humans, not robots. Your task is to generate fully SEO-optimized\
+      \ page content based on the provided keywords list. You have NO access to external\
+      \ tools, search engines, or databases — everything must be generated from your\
+      \ training knowledge and the provided input only. \n\nINPUT VARIABLES:\n- Language:\
+      \ {language}\n- Target Keywords: {keywords_list}\n- Page Content: {content}\
+      \ (up to 5000 chars, HTML stripped)\n- Page type: {page_type}\n\nUse this content\
+      \ as reference for style, tone, and specific details.\n\n---\n\n## STEP 1 —\
+      \ DETERMINE PAGE TYPE\n\nAnalyze {keywords_list} and determine the most appropriate\
+      \ page type:\n- **Product page** — keywords describe a specific item, SKU, model,\
+      \ or product variant (e.g., \"iPhone 15 Pro Max 256GB\", \"running shoes Nike\
+      \ Air Zoom\").\n- **Category page** — keywords describe a group, collection,\
+      \ or segment (e.g., \"wireless headphones\", \"men's winter jackets\", \"SEO\
+      \ tools\").\n- **Blog post** — keywords are question-based, informational, or\
+      \ how-to in nature (e.g., \"how to choose\", \"best practices for\", \"what\
+      \ is\", \"guide to\").\n\nUse your determination to apply the correct output\
+      \ length limits below.\n\n---\n\n## STEP 2 — BUILD LSI TERM LIST (REQUIRED,\
+      \ DO THIS BEFORE WRITING)\n\nLSI (Latent Semantic Indexing) terms are semantically\
+      \ related words and phrases that naturally co-occur with your target keywords\
+      \ in real-world content. They are NOT synonyms. They expand topical coverage\
+      \ and signal deep subject-matter authority to search engines.\n\n**LSI Generation\
+      \ Rules:**\n1. Extract the core topic from {keywords_list}.\n2. Generate 15–25\
+      \ LSI terms across these five categories:\n\n   - **Technical/Attribute terms**\
+      \ — specs, materials, dimensions, standards\n   - **Use-case terms** — who uses\
+      \ it, when, for what purpose\n   - **Commercial modifier terms** — price-related,\
+      \ comparison, purchase-intent signals\n   - **Problem/Solution terms** — pain\
+      \ points the product/topic addresses\n   - **Ecosystem terms** — related products,\
+      \ tools, accessories, complementary concepts\n\n3. Rate each generated LSI term\
+      \ by relevance (High / Medium) and distribute them across the text: High-relevance\
+      \ in headings and the lead paragraph, Medium-relevance in body paragraphs and\
+      \ FAQ.\n\n**LSI Examples by Topic:**\n\nTopic: \"wireless headphones\"\n→ Technical:\
+      \ noise cancellation, Bluetooth 5.3, 40-hour battery life, impedance, frequency\
+      \ response\n→ Use-case: commuting, remote work, gym workouts, gaming sessions,\
+      \ video calls\n→ Commercial: price-per-hour of use, warranty coverage, return\
+      \ policy, bundle deals\n→ Problem/Solution: ear fatigue, call drop issues, tangled\
+      \ cables, sound leakage\n→ Ecosystem: carrying case, USB-C charging, voice assistant\
+      \ compatibility, equalizer app\n\nTopic: \"how to choose a standing desk\"\n\
+      → Technical: height adjustment range, weight capacity, desk surface area, memory\
+      \ presets\n→ Use-case: home office, dual-monitor setup, tall users, ergonomic\
+      \ posture\n→ Commercial: desk under $500, assembly time, delivery timeline\n\
+      → Problem/Solution: back pain, sedentary work, poor posture, neck strain\n→\
+      \ Ecosystem: anti-fatigue mat, monitor arm, cable management, ergonomic chair\n\
+      \nTopic: \"running shoes Nike Air Zoom\"\n→ Technical: foam midsole, heel drop,\
+      \ outsole grip, breathable mesh upper, weight in grams\n→ Use-case: marathon\
+      \ training, trail running, casual wear, speed workouts\n→ Commercial: true to\
+      \ size, wide-fit option, limited edition colorway\n→ Problem/Solution: plantar\
+      \ fasciitis, overpronation, blister prevention, toe box squeeze\n→ Ecosystem:\
+      \ running socks, GPS watch, orthotic insoles, shoe deodorizer\n\n**Target LSI\
+      \ density:** 8–12 LSI terms per 1000 words. Do NOT repeat the same LSI term\
+      \ more than twice.\n\n---\n\n## STEP 3 — WRITE THE OUTPUT\n\nProduce the following\
+      \ four sections in order. Output ONLY these sections — no extra commentary,\
+      \ no markdown, no explanation.\n\n---\n\n### OUTPUT FORMAT\n\n**META_TITLE:**\n\
+      [Write the meta title here]\nLength: up to 60 characters (product), up to 65\
+      \ characters (category), up to 70 characters (blog post).\nRules: Include the\
+      \ primary keyword near the start. No clickbait. No ALL CAPS. No trailing punctuation.\
+      \ No emojis.\n\n**META_DESCRIPTION:**\n[Write the meta description here]\nLength:\
+      \ up to 160 characters (product), up to 165 characters (category), up to 170\
+      \ characters (blog post).\nRules: Include the primary keyword and a clear Call\
+      \ to Action. Add 1–2 emojis. Use ONLY simple 3-byte Unicode emojis (e.g., ✅\
+      \ ⭐ \U0001F525 \U0001F4A1 \U0001F4E6 \U0001F6D2 \U0001F3AF \U0001F50D ✨ \U0001F4AA\
+      \ \U0001F4DD \U0001F3C6 \U0001F449 \U0001F4B0 \U0001F680). Do NOT use complex\
+      \ multi-codepoint emojis (flags, skin-tone variants, ZWJ sequences). Place emojis\
+      \ at the start or end of the description, not mid-sentence.\n\n**H1:**\n[Write\
+      \ the H1 tag content here]\nLength: up to 70 characters (product), up to 75\
+      \ characters (category), up to 80 characters (blog post).\nRules: Include the\
+      \ primary keyword. Be specific and descriptive. Do not repeat the meta title\
+      \ verbatim.\n\n**DESCRIPTION:**\n[Write the full HTML description body here]\n\
+      Length limits:\n- Product page: up to 1000 characters (including HTML tags).\n\
+      - Category page: up to 2000 characters (including HTML tags).\n- Blog post:\
+      \ up to 5000 characters (including HTML tags).\n\nHTML Formatting Rules (STRICT\
+      \ — NO MARKDOWN):\n- Use ONLY: <p>, <b>, <br/>, <u>, <i>, <h2>, <h3>\n- Use\
+      \ <b> for logical emphasis on key ideas, NEVER to highlight target keywords\
+      \ directly.\n- Wrap every paragraph in <p> tags.\n- Use <h2> for major section\
+      \ titles, <h3> for sub-sections or FAQ header.\n- ABSOLUTELY NO asterisks (**),\
+      \ hashes (##), dashes (-) as bullets, or any markdown syntax.\n\nDescription\
+      \ Structure:\n1. **Lead paragraph** (100–150 words for category/blog; 50–80\
+      \ words for product): Hook sentence using the primary keyword + 2–3 High-relevance\
+      \ LSI terms. No filler. No forbidden openers.\n2. **Main body** using the FAB\
+      \ framework:\n   - <b>Features:</b> Objective facts, specs, what it is.\n  \
+      \ - <b>Attributes:</b> Why it matters — connect features to differentiation\
+      \ with measurable detail.\n   - <b>Benefits:</b> The concrete outcome for the\
+      \ reader.\n3. **Conclusion** (skip for products): Natural wrap-up. No forbidden\
+      \ generic closers.\n4. **FAQ section** (category and blog posts only): Add <h3>FAQ</h3>\
+      \ header. Include 3–5 relevant questions and answers derived from {keywords_list}\
+      \ and LSI terms. Format each Q as <b>Q: ...</b> and each A as a <p> tag.\n\n\
+      ---\n\n## COPYWRITING FRAMEWORKS\n\n**SUCKS Framework (apply to all text):**\n\
+      - **Specific:** Write for ONE reader persona. Concrete details over abstractions.\n\
+      - **Unique & Useful:** Change how the reader thinks, feels, or acts.\n- **Clear:**\
+      \ 12-year-old comprehension test. Avoid jargon unless it is a target LSI term.\n\
+      - **Kept Simple:** Short sentences. Simple words. One idea per paragraph.\n\
+      - **Sticky:** Use alliteration, symmetry, or contrast to create memorable phrases.\n\
+      \n**FAB Framework (main body):**\n- Features → Attributes → Benefits in that\
+      \ order for each key point.\n\n---\n\n## STRICT ANTI-AI WRITING RULES\n\n**Tier\
+      \ 1 — Always Remove (zero tolerance):**\n- Correlative constructions: \"It's\
+      \ not X, it's Y\" / \"Not only X, but also Y\"\n- Rhetorical flourishes: \"\
+      The best part?\", \"The secret?\", \"Here's the thing...\", \"Let's be honest...\"\
+      , \"At the end of the day...\", \"What if I told you...\"\n- Staccato phrasing:\
+      \ \"No fluff. No filler. Just results.\"\n- Forbidden openers: \"In today's\
+      \ fast-paced world\", \"In the ever-evolving landscape of...\", \"Gone are the\
+      \ days when...\"\n- Generic closers: \"In conclusion...\", \"To summarize...\"\
+      , \"In this article...\", \"The future looks bright\", \"Only time will tell\"\
+      \n- Forbidden vocabulary: delve, landscape (as metaphor), tapestry, realm, paradigm,\
+      \ embark, beacon, testament to, robust, comprehensive, cutting-edge, leverage\
+      \ (as verb), pivotal, underscores, meticulous(ly), seamless(ly), game-changer,\
+      \ hit differently, utilize, watershed moment, nestled, vibrant, thriving, showcasing,\
+      \ deep dive, unpack, bustling, intricate, ever-evolving, enduring, daunting,\
+      \ holistic(ly), actionable, impactful, learnings, thought leader, best practices,\
+      \ synergy, interplay, in order to, due to the fact that, serves as, boasts,\
+      \ commence, ascertain, endeavor, keen, symphony, embrace\n- Formatting: Maximum\
+      \ ONE em dash (— or --) per 1000 words.\n\n**Tier 2 — Avoid Clusters:** Do not\
+      \ use 2 or more of these in the same paragraph: harness, navigate, foster, elevate,\
+      \ empower, facilitate, streamline, bolster, cultivate, illuminate, ecosystem,\
+      \ myriad, plethora, encompass, catalyze, reimagine, galvanize, augment, juxtapose,\
+      \ paramount, burgeoning, nascent.\n\n**Tier 3 — Avoid Density:** Do not overuse\
+      \ (>3% of text): significant, innovative, effective, dynamic, scalable, compelling,\
+      \ unprecedented, exceptional, remarkable, sophisticated, instrumental, world-class.\
+      \ Maximum one \"just\" per paragraph and one \"actually\" per 500 words.\n\n\
+      ---\n\n## LANGUAGE-SPECIFIC RULES\n\nApply rules for the specified {language}:\n\
+      \n- **English (en):** Follow Google Search Central content guidelines. Active\
+      \ voice preferred. Oxford comma.\n- **Russian (ru):** Write in natural Russian.\
+      \ Avoid AI clichés: «в современных реалиях», «на сегодняшний день», «стоит отметить»,\
+      \ «важно подчеркнуть», «подводя итог», «осуществлять деятельность», «является»,\
+      \ «данный». Use Cyrillic LSI terms naturally — do not transliterate unnecessarily.\n\
+      - **Ukrainian (uk):** Write in authentic Ukrainian, not translated Russian.\
+      \ Avoid: «в сучасних реаліях», «на сьогоднішній день», «варто зазначити», «підсумовуючи»,\
+      \ «є», «даний». Use Ukrainian-specific LSI phrasing, not Russian equivalents.\n\
+      \n---\n\n## FINAL CHECKLIST (verify before outputting)\n\n- [ ] Page type determined\
+      \ from keywords\n- [ ] 15–25 LSI terms generated (internal, not output)\n- [\
+      \ ] LSI density: 8–12 terms per 1000 words\n- [ ] Meta title length within limit,\
+      \ no emojis\n- [ ] Meta description has 1–2 simple 3-byte emojis, length within\
+      \ limit\n- [ ] H1 is distinct from meta title, within length limit\n- [ ] Description\
+      \ uses only allowed HTML tags, no markdown\n- [ ] All Tier 1 forbidden patterns\
+      \ absent\n- [ ] Language-specific AI patterns absent\n- [ ] Output contains\
+      \ exactly 4 sections: META_TITLE, META_DESCRIPTION, H1, DESCRIPTION\n\nNow generate\
+      \ the output for the provided {language} and {keywords_list}."
+  custom_providers:
+  - name: omniroute
+    display_name: Omniroute
+    base_url: http://localhost:20128/v1
+    api_key_env: OMNIROUTE_API_KEY
 keywords:
   allowed_languages:
   - ru
@@ -73,9 +216,9 @@ logging:
   console_enabled: true
   console_level: INFO
   api_enabled: true
-  api_level: ERROR
+  api_level: WARNING
   api_retention_days: 30
-  error_level: ERROR
+  error_level: WARNING
   log_test_runs: false
 history:
   retention_days: 30
@@ -89,8 +232,112 @@ google_ads:
   - '1036'
   currency_code: UAH
   max_keywords_per_request: 1000
+serp:
+  provider: browser_cloakbrowser
+  num_results: 10
+  gl: ua
+  hl: uk
+  timeout_seconds: 30
+  device: ''
+  search_type: web
+  time_period: any
+  safe_search: 'off'
+  google_domain: google.com.ua
+  location: ''
+  uule: ''
 ui:
   language: ru
-  provider: Cerebras
-  model: gpt-oss-120b
+  provider: Omniroute
+  model: vertex/gemini-3.1-pro-preview
   max_keywords: 50
+seo_math:
+  enabled: true
+  analyze_ngrams: true
+  analyze_tfidf: true
+  analyze_cooccurrence: true
+  analyze_intent: true
+  analyze_generation_quality: true
+  analyze_generated_text: true
+  ngram_min: 1
+  ngram_max: 4
+  top_terms_limit: 50
+  min_ngram_count: 2
+  min_document_frequency: 2
+  use_related_searches: true
+  use_people_also_ask: true
+  strip_suffixes: false
+  analyze_bm25f: true
+  bm25f_params:
+    k1: 1.2
+    b_body: 0.75
+    b_title: 0.5
+    b_snippet: 0.6
+  field_weights:
+    serp_title: 3.0
+    page_title: 3.0
+    h1: 2.5
+    meta_description: 1.5
+    serp_snippet: 1.5
+    related_searches: 1.2
+    people_also_ask: 1.1
+    trends_related: 1.2
+    body_text: 1.0
+    anchor_text: 1.4
+  signals:
+    title_alignment: true
+    content_effort: true
+    topical_overlap: true
+    simhash: true
+crawler:
+  enabled: true
+  max_pages: 1
+  max_depth: 3
+  same_domain_only: true
+  timeout_seconds: 120
+  max_response_bytes: 10485760
+  max_retries: 1
+cache:
+  enabled: true
+  default_ttl_hours: 168
+  max_cache_records: 10000
+  cache_relevant_subset:
+  - seo_math.analyze_bm25f
+  - seo_math.bm25f_params
+  - seo_math.field_weights
+  - seo_math.signals
+  - llm.provider
+  - llm.model
+  - cache
+  - google_trends
+google_trends:
+  provider: browser_scraper_trends
+  provider_order:
+  - browser_scraper_trends
+  - dataforseo_trends
+  - serpapi_trends
+  - scrapebadger_web
+  show_confidence_metadata: true
+  default_geo: UA
+  default_timeframe: today 12-m
+  default_category: 0
+  default_property: ''
+  cache_ttl_hours: 24
+  batch_delay_seconds: 2
+  rate_limit_delay_on_429: 60
+  max_keywords_per_request: 10
+  max_keywords_per_request_min: 1
+  max_keywords_per_request_max: 100
+  manual_start_wait: 0
+  min_delay: 10
+  max_delay: 60
+  state_file: trends_state.json
+  headless: false
+scraper:
+  browser_enabled: true
+  engine: cloakbrowser
+  parser: trafilatura
+  headless: true
+  timeout_seconds: 30
+  retry_on_failure: 3
+  use_as_primary_trends: false
+  use_as_primary_serp: false

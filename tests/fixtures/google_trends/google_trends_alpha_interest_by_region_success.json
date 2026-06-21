@@ -1,0 +1,20 @@
+{
+  "interestByRegion": [
+    {
+      "term": "seo",
+      "region": {
+        "regionCode": "US-CA",
+        "regionName": "California"
+      },
+      "value": 100
+    },
+    {
+      "term": "seo",
+      "region": {
+        "regionCode": "US-NY",
+        "regionName": "New York"
+      },
+      "value": 85
+    }
+  ]
+}

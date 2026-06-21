@@ -1,0 +1,78 @@
+{
+  "search_metadata": {
+    "id": "serpapi-timeseries-1",
+    "status": "Success",
+    "json_endpoint": "https://serpapi.com/searches/serpapi-timeseries-1/google_trends.json"
+  },
+  "search_parameters": {
+    "engine": "google_trends",
+    "q": "seo",
+    "data_type": "TIMESERIES",
+    "time_range": "today 12-m",
+    "geo": "US"
+  },
+  "interest_over_time": {
+    "timeline_data": [
+      {
+        "timestamp": 1704067200,
+        "date": "Jan 2024",
+        "values": [
+          {
+            "query": "seo",
+            "value": "75",
+            "extracted_value": 75
+          }
+        ]
+      },
+      {
+        "timestamp": 1706745600,
+        "date": "Feb 2024",
+        "values": [
+          {
+            "query": "seo",
+            "value": "82",
+            "extracted_value": 82
+          }
+        ]
+      }
+    ],
+    "averages": [
+      {
+        "query": "seo",
+        "value": "78.5"
+      }
+    ]
+  },
+  "related_queries": {
+    "top": [
+      {
+        "query": "what is seo",
+        "value": 100
+      }
+    ],
+    "rising": [
+      {
+        "query": "seo tools",
+        "value": 500
+      }
+    ]
+  },
+  "related_topics": {
+    "top": [
+      {
+        "topic_title": "Search engine optimization",
+        "topic_type": "Topic",
+        "value": 100
+      }
+    ]
+  },
+  "interest_by_region": {
+    "geo_map_data": [
+      {
+        "geo_name": "California",
+        "geo_code": "US-CA",
+        "value": [100]
+      }
+    ]
+  }
+}

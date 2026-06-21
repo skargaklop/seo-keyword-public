@@ -1,0 +1,8 @@
+{
+  "search_metadata": {
+    "id": "serpapi-error-1",
+    "status": "Error",
+    "json_endpoint": "https://serpapi.com/searches/serpapi-error-1/google_trends.json"
+  },
+  "error": "Async task failed"
+}

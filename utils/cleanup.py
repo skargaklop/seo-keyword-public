@@ -1,7 +1,3 @@
-"""
-Auto-cleanup utility for outputs/ folder — removes files older than N days (improvement #8).
-"""
-
 import time
 from pathlib import Path
 from typing import List
@@ -15,20 +11,31 @@ DEFAULT_MAX_AGE_DAYS = CLEANUP_CONFIG.get("max_age_days", 30)
 DEFAULT_API_LOG_RETENTION_DAYS = LOGGING_CONFIG.get("api_retention_days", 30)
 
 
+# MODULE_CONTRACT: utils/cleanup
+# Purpose: Retention-based file cleanup for outputs/, API logs, and history entries
+# Rationale: Prevents unbounded disk growth by removing aged artifacts at startup
+# Dependencies: config.settings, utils.history, utils.logger
+# Exports: cleanup_old_files, cleanup_api_logs, run_startup_cleanup
+# LINKS: requirements.xml#UC-001, knowledge-graph.xml#MOD-001
+# MODULE_MAP: utils/cleanup.py
+# Public Functions: cleanup_old_files, cleanup_api_logs, run_startup_cleanup
+# Private Helpers: (none)
+# Key Semantic Blocks: block_cleanup_outputs_file_retention, block_cleanup_startup_all_tasks
+# Critical Flows: run_startup_cleanup called at app startup to enforce retention policies
+# Verification: V-SUITE
+# CHANGE_SUMMARY: Added module-level contracts; added FUNCTION_CONTRACT blocks for all three functions; removed post-declaration docstrings
+# FUNCTION_CONTRACT: cleanup_old_files
+# Purpose: Delete files older than a configured age from a directory, with symlink and path-traversal protection
+# Input: directory (Path), max_age_days (int | None) — 0 disables cleanup; None reads from config
+# Output: List[str] — paths of deleted files
+# Side Effects: deletes files on disk; logs deletions and warnings
+# Business Rules: skips symlinks; resolves paths to prevent traversal; 0 disables
+# Failure Modes: logs warnings on per-file deletion errors; never raises
+# LINKS: requirements.xml#UC-001
 def cleanup_old_files(
     directory: Path = OUTPUTS_DIR,
     max_age_days: int | None = None,
 ) -> List[str]:
-    """
-    Remove files older than max_age_days from the specified directory.
-
-    Args:
-        directory: Path to the directory to clean up.
-        max_age_days: Maximum age of files in days before deletion. 0 = disabled.
-
-    Returns:
-        List of deleted file paths.
-    """
     if max_age_days is None:
         max_age_days = int(
             load_config().get("cleanup", {}).get("max_age_days", DEFAULT_MAX_AGE_DAYS)
@@ -69,11 +76,18 @@ def cleanup_old_files(
     return deleted
 
 
+# FUNCTION_CONTRACT: cleanup_api_logs
+# Purpose: Delete aged API request log files including rotated backups
+# Input: directory (Path), max_age_days (int | None) — 0 disables; None reads from config
+# Output: List[str] — paths of deleted log files
+# Side Effects: deletes files on disk; logs warnings on errors
+# Business Rules: only targets api_requests.log and its rotated siblings; skips symlinks
+# Failure Modes: logs warnings on per-file errors; never raises
+# LINKS: requirements.xml#UC-001
 def cleanup_api_logs(
     directory: Path = LOG_DIR,
     max_age_days: int | None = None,
 ) -> List[str]:
-    """Remove old API log files, including rotated log files."""
     if max_age_days is None:
         max_age_days = int(
             load_config().get("logging", {}).get(
@@ -103,8 +117,15 @@ def cleanup_api_logs(
     return deleted
 
 
+# FUNCTION_CONTRACT: run_startup_cleanup
+# Purpose: Execute all retention-based cleanup tasks at application startup
+# Input: (none)
+# Output: dict[str, int] — counts of deleted outputs, API logs, and history entries
+# Side Effects: delegates to cleanup_old_files, cleanup_api_logs, HistoryManager.trim_history_entries
+# Business Rules: reads retention settings from current config each call
+# Failure Modes: delegates error handling to sub-functions
+# LINKS: requirements.xml#UC-001
 def run_startup_cleanup() -> dict[str, int]:
-    """Run all retention-based cleanup tasks before app execution."""
     config = load_config()
     outputs_deleted = cleanup_old_files(
         directory=OUTPUTS_DIR,

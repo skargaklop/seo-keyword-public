@@ -1,0 +1,24 @@
+{
+  "default": {
+    "rankedList": [
+      {
+        "formattedRankType": "Top",
+        "rankedKeyword": [
+          {
+            "query": "what is seo",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "formattedRankType": "Rising",
+        "rankedKeyword": [
+          {
+            "query": "seo tools",
+            "value": "Breakout"
+          }
+        ]
+      }
+    ]
+  }
+}

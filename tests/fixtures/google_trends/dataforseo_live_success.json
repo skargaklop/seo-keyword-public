@@ -1,0 +1,100 @@
+{
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "tasks_count": 1,
+  "tasks_error": 0,
+  "tasks": [
+    {
+      "id": "task-success-001",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "result_count": 4,
+      "result": [
+        {
+          "keyword": "seo",
+          "type": "google_trends_interest_over_time",
+          "items_count": 1,
+          "items": [
+            {
+              "keyword": "seo",
+              "data": [
+                {
+                  "date": "2024-01-01",
+                  "value": 75
+                },
+                {
+                  "date": "2024-02-01",
+                  "value": 82
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "keyword": "seo",
+          "type": "google_trends_interest_by_region",
+          "items_count": 1,
+          "items": [
+            {
+              "keyword": "seo",
+              "data": [
+                {
+                  "geo_id": "UA-30",
+                  "geo_name": "Kyiv",
+                  "value": 100,
+                  "max_value": 100
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "keyword": "seo",
+          "type": "google_trends_related_queries",
+          "items_count": 1,
+          "items": [
+            {
+              "keyword": "seo",
+              "data": [
+                {
+                  "query": "seo tools",
+                  "value": 100
+                }
+              ],
+              "rising_data": [
+                {
+                  "query": "ai seo",
+                  "value": 250
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "keyword": "seo",
+          "type": "google_trends_related_topics",
+          "items_count": 1,
+          "items": [
+            {
+              "keyword": "seo",
+              "data": [
+                {
+                  "title": "Search engine optimization",
+                  "type": "topic",
+                  "value": 100
+                }
+              ],
+              "rising_data": [
+                {
+                  "title": "SEO 2024",
+                  "type": "topic",
+                  "value": 300
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

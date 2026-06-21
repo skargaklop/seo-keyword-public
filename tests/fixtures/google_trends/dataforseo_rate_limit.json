@@ -1,0 +1,15 @@
+{
+  "status_code": 40005,
+  "status_message": "Rate limit exceeded.",
+  "tasks_count": 1,
+  "tasks_error": 1,
+  "tasks": [
+    {
+      "id": "task-rate-limit-001",
+      "status_code": 40005,
+      "status_message": "Rate limit exceeded.",
+      "result_count": 0,
+      "result": []
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "status_code": 40101,
+  "status_message": "Unauthorized.",
+  "tasks_count": 1,
+  "tasks_error": 1,
+  "tasks": [
+    {
+      "id": "task-auth-001",
+      "status_code": 40101,
+      "status_message": "Unauthorized.",
+      "result_count": 0,
+      "result": []
+    }
+  ]
+}

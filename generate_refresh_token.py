@@ -1,15 +1,16 @@
-"""
-Скрипт для генерации Google Ads OAuth2 Refresh Token.
-
-Использование:
-    1. Убедитесь, что в .env заполнены GOOGLE_ADS_CLIENT_ID и GOOGLE_ADS_CLIENT_SECRET
-    2. Запустите: python generate_refresh_token.py
-    3. Откроется браузер — авторизуйтесь в Google аккаунте с доступом к Google Ads
-    4. Скопируйте полученный refresh_token в .env -> GOOGLE_ADS_REFRESH_TOKEN
-
-Требования:
-    pip install google-auth-oauthlib python-dotenv
-"""
+﻿# MODULE_CONTRACT: generate_refresh_token
+# Purpose: OAuth2 refresh-token helper for Google Ads credentials and local environment updates
+# Rationale: Keep the token bootstrap flow explicit for GRACE adoption and review
+# Dependencies: os, sys, google_auth_oauthlib.flow, dotenv
+# Exports: main, _mask_secret, _update_env_file
+# LINKS: requirements.xml#UC-003, knowledge-graph.xml#MOD-028, verification-plan.xml#V-12-REFRESH-TOKEN-SYNTAX, verification-plan.xml#V-12-REFRESH-TOKEN-TESTS
+# MODULE_MAP: generate_refresh_token.py
+# Public Functions: main
+# Private Helpers: _mask_secret, _update_env_file
+# Key Semantic Blocks: block_refresh_token_bootstrap, block_env_refresh_token_persist
+# Critical Flows: load credentials -> run consent flow -> persist refresh token -> update .env
+# Verification: python -m py_compile, python -m ruff check ., python -m pytest -q
+# CHANGE_SUMMARY: Restored top-of-file module contract metadata for refresh-token generation
 
 import os
 import sys
@@ -17,28 +18,39 @@ import sys
 try:
     from google_auth_oauthlib.flow import InstalledAppFlow
 except ImportError:
-    print("[ERROR] Модуль google-auth-oauthlib не установлен.")
-    print("        Установите: pip install google-auth-oauthlib")
+    print("[ERROR] google-auth-oauthlib is not installed.")
+    print("        Install with: pip install google-auth-oauthlib")
     sys.exit(1)
 
 try:
     from dotenv import load_dotenv
 except ImportError:
-    print("[ERROR] Модуль python-dotenv не установлен.")
-    print("        Установите: pip install python-dotenv")
+    print("[ERROR] python-dotenv is not installed.")
+    print("        Install with: pip install python-dotenv")
     sys.exit(1)
-
-
+# FUNCTION_CONTRACT: _mask_secret
+# Purpose: Implement the  mask secret helper for this module.
+# Input: secret (str), visible_tail (int = 6)
+# Output: str
+# Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+# Business Rules: Preserves the current validation and control flow for this call path.
+# Failure Modes: Propagates upstream exceptions and existing fallback paths.
+# LINKS: requirements.xml#UC-001
 def _mask_secret(secret: str, visible_tail: int = 6) -> str:
     if not secret:
         return ""
     if len(secret) <= visible_tail:
         return "*" * len(secret)
     return f"{'*' * (len(secret) - visible_tail)}{secret[-visible_tail:]}"
-
-
+# FUNCTION_CONTRACT: main
+# Purpose: Implement the main helper for this module.
+# Input: (none)
+# Output: None
+# Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+# Business Rules: Preserves the current validation and control flow for this call path.
+# Failure Modes: Propagates upstream exceptions and existing fallback paths.
+# LINKS: requirements.xml#UC-001
 def main() -> None:
-    # Загружаем .env из папки скрипта
     env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     load_dotenv(env_path)
 
@@ -133,10 +145,15 @@ def main() -> None:
             "  2. https://console.cloud.google.com/apis/library/googleads.googleapis.com"
         )
         sys.exit(1)
-
-
+# FUNCTION_CONTRACT: _update_env_file
+# Purpose: Implement the  update env file helper for this module.
+# Input: env_path (str), refresh_token (str)
+# Output: None
+# Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+# Business Rules: Preserves the current validation and control flow for this call path.
+# Failure Modes: Propagates upstream exceptions and existing fallback paths.
+# LINKS: requirements.xml#UC-001
 def _update_env_file(env_path: str, refresh_token: str) -> None:
-    """Обновить GOOGLE_ADS_REFRESH_TOKEN в .env файле."""
     try:
         if not os.path.exists(env_path):
             print(f"  [WARN] Файл {env_path} не найден, создаю новый.")

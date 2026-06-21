@@ -1,0 +1,10 @@
+{
+  "default": {
+    "geoMapData": [
+      {
+        "geoName": "California",
+        "value": [100]
+      }
+    ]
+  }
+}

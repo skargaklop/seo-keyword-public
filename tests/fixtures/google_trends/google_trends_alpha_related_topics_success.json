@@ -1,0 +1,23 @@
+{
+  "relatedTopics": [
+    {
+      "term": "seo",
+      "top": [
+        {
+          "topic": "Search engine optimization",
+          "topicType": "Topic",
+          "value": 100,
+          "mid": "/m/012345"
+        }
+      ],
+      "rising": [
+        {
+          "topic": "AI SEO",
+          "topicType": "Topic",
+          "value": 350,
+          "mid": "/m/067890"
+        }
+      ]
+    }
+  ]
+}

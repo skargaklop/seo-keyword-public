@@ -1,0 +1,19 @@
+{
+  "relatedQueries": [
+    {
+      "term": "seo",
+      "top": [
+        {
+          "query": "what is seo",
+          "value": 100
+        }
+      ],
+      "rising": [
+        {
+          "query": "ai seo tools",
+          "value": 500
+        }
+      ]
+    }
+  ]
+}

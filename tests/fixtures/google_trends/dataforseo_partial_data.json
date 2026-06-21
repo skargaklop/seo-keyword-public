@@ -1,0 +1,42 @@
+{
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "tasks_count": 1,
+  "tasks_error": 0,
+  "tasks": [
+    {
+      "id": "task-partial-001",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "result_count": 2,
+      "result": [
+        {
+          "keyword": "seo",
+          "type": "google_trends_interest_over_time",
+          "items_count": 1,
+          "items": [
+            {
+              "keyword": "seo",
+              "data": [
+                {
+                  "date": "2024-01-01",
+                  "value": 10
+                },
+                {
+                  "date": "2024-02-01",
+                  "value": 20
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "keyword": "seo",
+          "type": "google_trends_unsupported",
+          "items_count": 0,
+          "items": []
+        }
+      ]
+    }
+  ]
+}

@@ -22,12 +22,29 @@ from utils.logger import logger
 from utils.cache import scraping_cache
 from utils.url_safety import URLSafetyError, validate_safe_url_with_ips
 
+
+# MODULE_CONTRACT: scraper
+# Purpose: Web content extraction with URL safety validation, async support, and result caching
+# Rationale: Safely scrapes web pages for SEO analysis while blocking requests to private/internal/loopback addresses
+# Dependencies: trafilatura, aiohttp, requests, tenacity, utils.url_safety, utils.cache, utils.logger
+# Exports: WebScraper (class with scrape_urls, scrape_url), ScrapedContent (dataclass)
+# LINKS: requirements.xml#UC-001, technology.xml#DEP-002, development-plan.xml#MOD-005
+# MODULE_MAP: scraper
+# Public Functions: WebScraper.scrape_urls(), WebScraper.scrape_url()
+# Private Helpers: _fetch_url(), _fetch_url_async(), _extract_text(), _extract_metadata(), _build_llm_context(), _validate_url_scheme(), _scrape_urls_sync(), _scrape_urls_async(), _scrape_url_async(), _is_certificate_verification_error(), _extract_requests_peer_ip(), _extract_aiohttp_peer_ip(), _assert_peer_ip_matches_allowlist()
+# Key Semantic Blocks: block_scraper_fetch_url_content, block_scraper_safety_validate, block_scraper_extract_page_text
+# Critical Flows: URL safety validation -> async/sync fetch with redirect following -> trafilatura extraction -> cache store
+# Verification: verification-plan.xml#V-MOD-005
+# CHANGE_SUMMARY: Replaced shallow GRACE markers with complete module-level contracts
+
 # Config values
 TIMEOUT: int = SCRAPING_CONFIG.get("timeout_seconds", 30)
 MAX_RETRIES: int = 3
 MAX_REDIRECTS: int = 5
 
-
+# CLASS_CONTRACT: ScrapedContent
+# Purpose: Carry extracted page metadata, text, success state, and scrape errors.
+# LINKS: requirements.xml#UC-001
 @dataclass
 class ScrapedContent:
     url: str
@@ -38,11 +55,20 @@ class ScrapedContent:
     success: bool = False
     error: Optional[str] = None
 
-
+# CLASS_CONTRACT: WebScraper
+# Purpose: Validate, fetch, extract, cache, and aggregate web page content.
+# LINKS: requirements.xml#UC-001, technology.xml#DEP-002
 class WebScraper:
+    # FUNCTION_CONTRACT: _is_certificate_verification_error
+    # Purpose: Implement the  is certificate verification error helper for this module.
+    # Input: exc (BaseException)
+    # Output: bool
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def _is_certificate_verification_error(exc: BaseException) -> bool:
-        """Return True when the exception represents an SSL certificate validation failure."""
         if isinstance(exc, (ssl.SSLCertVerificationError, aiohttp.ClientConnectorCertificateError)):
             return True
         if isinstance(exc, requests.exceptions.SSLError):
@@ -50,10 +76,16 @@ class WebScraper:
 
         message = str(exc).lower()
         return "certificate verify failed" in message or "certificate_verify_failed" in message
-
+    # FUNCTION_CONTRACT: _extract_metadata
+    # Purpose: Implement the  extract metadata helper for this module.
+    # Input: html_content (str), url (str)
+    # Output: Tuple[str, str, List[str]]
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def _extract_metadata(html_content: str, url: str) -> Tuple[str, str, List[str]]:
-        """Extract metadata (title, description, keywords) from HTML."""
         try:
             metadata = trafilatura.extract_metadata(html_content, default_url=url)
         except Exception as e:
@@ -77,7 +109,14 @@ class WebScraper:
                     seen.add(kw.lower())
 
         return title, description, keywords
-
+    # FUNCTION_CONTRACT: _build_llm_context
+    # Purpose: Implement the  build llm context helper for this module.
+    # Input: text (str), title (str), description (str), keywords (List[str])
+    # Output: str
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def _build_llm_context(
         text: str,
@@ -85,7 +124,6 @@ class WebScraper:
         description: str,
         keywords: List[str],
     ) -> str:
-        """Build text context for downstream LLM processing."""
         parts: List[str] = []
         if title:
             parts.append(f"Meta title: {title}")
@@ -96,15 +134,27 @@ class WebScraper:
         if text:
             parts.append(f"Page content:\n{text}")
         return "\n\n".join(parts).strip()
-
+    # FUNCTION_CONTRACT: _validate_url_scheme
+    # Purpose: Implement the  validate url scheme helper for this module.
+    # Input: url (str)
+    # Output: None
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def _validate_url_scheme(url: str) -> None:
-        """Validate URL safety before any outbound request."""
         validate_safe_url_with_ips(url)
-
+    # FUNCTION_CONTRACT: _extract_requests_peer_ip
+    # Purpose: Implement the  extract requests peer ip helper for this module.
+    # Input: response (requests.Response)
+    # Output: Optional[str]
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def _extract_requests_peer_ip(response: requests.Response) -> Optional[str]:
-        """Best-effort peer IP extraction from a requests response."""
         candidates = [
             getattr(getattr(response.raw, "_connection", None), "sock", None),
             getattr(getattr(response.raw, "connection", None), "sock", None),
@@ -124,10 +174,16 @@ class WebScraper:
             if isinstance(peer, tuple) and peer:
                 return str(peer[0])
         return None
-
+    # FUNCTION_CONTRACT: _extract_aiohttp_peer_ip
+    # Purpose: Implement the  extract aiohttp peer ip helper for this module.
+    # Input: response (aiohttp.ClientResponse)
+    # Output: Optional[str]
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def _extract_aiohttp_peer_ip(response: aiohttp.ClientResponse) -> Optional[str]:
-        """Best-effort peer IP extraction from an aiohttp response."""
         transport = None
         if getattr(response, "connection", None) is not None:
             transport = getattr(response.connection, "transport", None)
@@ -139,14 +195,20 @@ class WebScraper:
         if isinstance(peer, tuple) and peer:
             return str(peer[0])
         return None
-
+    # FUNCTION_CONTRACT: _assert_peer_ip_matches_allowlist
+    # Purpose: Implement the  assert peer ip matches allowlist helper for this module.
+    # Input: url (str), allowed_ips (List[str]), peer_ip (Optional[str])
+    # Output: None
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def _assert_peer_ip_matches_allowlist(
         url: str,
         allowed_ips: List[str],
         peer_ip: Optional[str],
     ) -> None:
-        """Reject connections whose peer IP differs from the validated DNS answer."""
         if not allowed_ips:
             return
         if not peer_ip:
@@ -155,16 +217,21 @@ class WebScraper:
             raise URLSafetyError(
                 f"Remote peer IP {peer_ip} did not match validated DNS results for {url}"
             )
-
-    @staticmethod
     @retry(
         stop=stop_after_attempt(MAX_RETRIES),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((requests.RequestException, TimeoutError)),
         reraise=True,
     )
+    # FUNCTION_CONTRACT: _fetch_url
+    # Purpose: Implement the fetch url helper for this module.
+    # Input: url (str)
+    # Output: str
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     def _fetch_url(url: str) -> str:
-        """Internal method to fetch URL content with retries."""
         headers: dict = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
@@ -219,10 +286,16 @@ class WebScraper:
                 return html_content
 
         raise ValueError("Too many redirects while fetching URL")
-
+    # FUNCTION_CONTRACT: _fetch_url_async
+    # Purpose: Implement the  fetch url async helper for this module.
+    # Input: url (str), session (aiohttp.ClientSession)
+    # Output: str
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     async def _fetch_url_async(url: str, session: aiohttp.ClientSession) -> str:
-        """Async method to fetch URL content (improvement #7)."""
         headers: dict = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
@@ -251,10 +324,16 @@ class WebScraper:
                 return await response.text()
 
         raise ValueError("Too many redirects while fetching URL")
-
+    # FUNCTION_CONTRACT: _extract_text
+    # Purpose: Implement the  extract text helper for this module.
+    # Input: html_content (str), url (str)
+    # Output: ScrapedContent
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def _extract_text(html_content: str, url: str) -> ScrapedContent:
-        """Extract text from HTML content using trafilatura."""
         if not html_content:
             msg: str = "Empty response from server"
             logger.warning(f"{msg}: {url}")
@@ -294,14 +373,16 @@ class WebScraper:
             text=llm_context,
             success=True,
         )
-
+    # FUNCTION_CONTRACT: scrape_url
+    # Purpose: Implement the scrape url helper for this module.
+    # Input: url (str)
+    # Output: ScrapedContent
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def scrape_url(url: str) -> ScrapedContent:
-        """
-        Scrape content from a single URL with caching support.
-        Returns ScrapedContent object.
-        """
-        # Check cache first (improvement #6)
         cached = scraping_cache.get(url)
         if cached is not None:
             return cached
@@ -321,11 +402,16 @@ class WebScraper:
             error_msg: str = str(e)
             logger.error(f"Failed to scrape {url}: {error_msg}")
             return ScrapedContent(url=url, success=False, error=error_msg)
-
+    # FUNCTION_CONTRACT: _scrape_url_async
+    # Purpose: Implement the  scrape url async helper for this module.
+    # Input: url (str), session (aiohttp.ClientSession)
+    # Output: ScrapedContent
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     async def _scrape_url_async(url: str, session: aiohttp.ClientSession) -> ScrapedContent:
-        """Async scrape a single URL (improvement #7)."""
-        # Check cache first
         cached = scraping_cache.get(url)
         if cached is not None:
             return cached
@@ -349,21 +435,20 @@ class WebScraper:
             error_msg: str = str(e)
             logger.error(f"Failed to async scrape {url}: {error_msg}")
             return ScrapedContent(url=url, success=False, error=error_msg)
-
+    # FUNCTION_CONTRACT: scrape_urls
+    # Purpose: Implement the scrape urls helper for this module.
+    # Input: urls (List[str]), progress_callback (Optional[Callable] = None), use_async (bool = True)
+    # Output: List[ScrapedContent]
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def scrape_urls(
         urls: List[str],
         progress_callback: Optional[Callable] = None,
         use_async: bool = True,
     ) -> List[ScrapedContent]:
-        """
-        Scrape multiple URLs. Uses async by default (improvement #7).
-
-        Args:
-            urls: List of URLs to scrape.
-            progress_callback: Optional callback for progress updates.
-            use_async: Whether to use async scraping (default: True).
-        """
         if use_async:
             try:
                 return WebScraper._scrape_urls_async(urls, progress_callback)
@@ -372,13 +457,19 @@ class WebScraper:
 
         # Fallback to synchronous scraping
         return WebScraper._scrape_urls_sync(urls, progress_callback)
-
+    # FUNCTION_CONTRACT: _scrape_urls_sync
+    # Purpose: Implement the  scrape urls sync helper for this module.
+    # Input: urls (List[str]), progress_callback (Optional[Callable] = None)
+    # Output: List[ScrapedContent]
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def _scrape_urls_sync(
         urls: List[str],
         progress_callback: Optional[Callable] = None,
     ) -> List[ScrapedContent]:
-        """Synchronous scraping of multiple URLs."""
         results: List[ScrapedContent] = []
         total: int = len(urls)
 
@@ -390,14 +481,27 @@ class WebScraper:
                 progress_callback((i + 1) / total, f"Scraping {i + 1}/{total}: {url}")
 
         return results
-
+    # FUNCTION_CONTRACT: _scrape_urls_async
+    # Purpose: Implement the  scrape urls async helper for this module.
+    # Input: urls (List[str]), progress_callback (Optional[Callable] = None)
+    # Output: List[ScrapedContent]
+    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+    # Business Rules: Preserves the current validation and control flow for this call path.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+    # LINKS: requirements.xml#UC-001
     @staticmethod
     def _scrape_urls_async(
         urls: List[str],
         progress_callback: Optional[Callable] = None,
     ) -> List[ScrapedContent]:
-        """Async scraping of multiple URLs (improvement #7)."""
-
+        # FUNCTION_CONTRACT: _run
+        # Purpose: Implement the  run helper for this module.
+        # Input: (none)
+        # Output: List[ScrapedContent]
+        # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
+        # Business Rules: Preserves the current validation and control flow for this call path.
+        # Failure Modes: Propagates upstream exceptions and existing fallback paths.
+        # LINKS: requirements.xml#UC-001
         async def _run() -> List[ScrapedContent]:
             async with aiohttp.ClientSession() as session:
                 tasks = [WebScraper._scrape_url_async(url, session) for url in urls]

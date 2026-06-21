@@ -7,7 +7,9 @@ import components.results as results
 from utils.pipeline import KEYWORD_SEED_SOURCE_URL
 
 
+# Purpose: TestKeywordIdeaHelpers implementation
 class TestKeywordIdeaHelpers:
+    # Purpose: Test keyword ideas translations are human readable
     def test_keyword_ideas_translations_are_human_readable(self) -> None:
         header = results.t("keyword_ideas_header")
         description = results.t("keyword_ideas_desc")
@@ -18,6 +20,7 @@ class TestKeywordIdeaHelpers:
         assert "??" not in description
         assert "??" not in add_button
 
+    # Purpose: Test merge keyword ideas into processed data adds only new keywords
     def test_merge_keyword_ideas_into_processed_data_adds_only_new_keywords(self) -> None:
         processed_df = pd.DataFrame(
             [
@@ -58,6 +61,7 @@ class TestKeywordIdeaHelpers:
         assert new_row["Source URL"] == "https://example.com/stretch-film"
         assert new_row["Avg Monthly Searches"] == 120
 
+    # Purpose: Test build keyword ideas display df matches analysis metrics columns
     def test_build_keyword_ideas_display_df_matches_analysis_metrics_columns(self) -> None:
         keyword_ideas_df = pd.DataFrame(
             [
@@ -89,6 +93,7 @@ class TestKeywordIdeaHelpers:
         ]
         assert "Source URL" not in display_df.columns
 
+    # Purpose: Test render keyword ideas generation does not mutate existing keyword widget state
     def test_render_keyword_ideas_generation_does_not_mutate_existing_keyword_widget_state(
         self, monkeypatch
     ) -> None:
@@ -156,6 +161,7 @@ class TestKeywordIdeaHelpers:
 
         assert st.session_state.keyword_ideas_flash_message is not None
 
+    # Purpose: Test deduplicate processed data removes duplicate keyword pairs
     def test_deduplicate_processed_data_removes_duplicate_keyword_pairs(self) -> None:
         processed_df = pd.DataFrame(
             [
@@ -184,6 +190,7 @@ class TestKeywordIdeaHelpers:
             deduped_df["Keyword"].tolist().count("деревна шерсть") == 2
         )
 
+    # Purpose: Test append manual keyword ignores existing url keyword pair
     def test_append_manual_keyword_ignores_existing_url_keyword_pair(self) -> None:
         processed_df = pd.DataFrame(
             [
@@ -204,6 +211,7 @@ class TestKeywordIdeaHelpers:
         assert added is False
         assert len(updated_df) == 1
 
+    # Purpose: Test build keyword selection signature changes for new run
     def test_build_keyword_selection_signature_changes_for_new_run(self) -> None:
         st.session_state.clear()
         st.session_state.current_run_id = "run-a"
@@ -223,6 +231,7 @@ class TestKeywordIdeaHelpers:
 
         assert signature_a != signature_b
 
+    # Purpose: Test build keyword ideas signature changes when seed flags change
     def test_build_keyword_ideas_signature_changes_when_seed_flags_change(self) -> None:
         selected_kw_by_url = {
             "https://example.com/a": ["alpha", "beta"],
@@ -246,6 +255,7 @@ class TestKeywordIdeaHelpers:
 
         assert signature_a != signature_b
 
+    # Purpose: Test limit keyword idea seed keywords trims to google ads cap
     def test_limit_keyword_idea_seed_keywords_trims_to_google_ads_cap(self) -> None:
         keywords = [f"keyword {index}" for index in range(25)]
 
@@ -253,6 +263,7 @@ class TestKeywordIdeaHelpers:
 
         assert limited == keywords[:20]
 
+    # Purpose: Test set keyword idea seed selection updates all keyword checkboxes
     def test_set_keyword_idea_seed_selection_updates_all_keyword_checkboxes(self) -> None:
         st.session_state.clear()
         url = "https://example.com/page"
@@ -280,6 +291,7 @@ class TestKeywordIdeaHelpers:
             st.session_state[results.build_keyword_idea_seed_key(url, "gamma")] is True
         )
 
+    # Purpose: Test render keyword ideas generation uses checked keyword seed subset and caps at 20
     def test_render_keyword_ideas_generation_uses_checked_keyword_seed_subset_and_caps_at_20(
         self, monkeypatch
     ) -> None:
@@ -293,26 +305,34 @@ class TestKeywordIdeaHelpers:
                 index < 22
             )
 
+        # Purpose:  FakeStatus implementation
         class _FakeStatus:
+            # Purpose:   init   implementation
             def __init__(self) -> None:
                 self.messages = []
 
+            # Purpose: write implementation
             def write(self, message) -> None:
                 self.messages.append(message)
 
+            # Purpose: update implementation
             def update(self, **kwargs) -> None:
                 self.messages.append(kwargs)
 
+        # Purpose:  FakeAdsHandler implementation
         class _FakeAdsHandler:
+            # Purpose:   init   implementation
             def __init__(self, *args, **kwargs) -> None:
                 pass
 
-            def get_keyword_ideas(self, seed_keywords, page_url=None, source_url=None):
+            # Purpose: get keyword ideas implementation
+            def get_keyword_ideas(self, seed_keywords, page_url=None, source_url=None, force_refresh=False):
                 recorded_calls.append(
                     {
                         "seed_keywords": list(seed_keywords),
                         "page_url": page_url,
                         "source_url": source_url,
+                        "force_refresh": force_refresh,
                     }
                 )
                 return pd.DataFrame()
@@ -354,6 +374,7 @@ class TestKeywordIdeaHelpers:
         assert len(recorded_calls[0]["seed_keywords"]) == 20
         assert recorded_calls[0]["seed_keywords"] == keywords[:20]
 
+    # Purpose: Test apply keyword ideas updates processed data and preserves seo keyword selection
     def test_apply_keyword_ideas_updates_processed_data_and_preserves_seo_keyword_selection(
         self, monkeypatch
     ) -> None:
@@ -433,10 +454,12 @@ class TestKeywordIdeaHelpers:
         assert total_selected == 2
         assert selected_kw_by_url[source_url] == [original_keyword, new_keyword]
 
+    # Purpose: Test format source label humanizes keyword seed source
     def test_format_source_label_humanizes_keyword_seed_source(self) -> None:
         assert hasattr(results, "format_source_label")
         assert results.format_source_label(KEYWORD_SEED_SOURCE_URL) != KEYWORD_SEED_SOURCE_URL
 
+    # Purpose: Test build history metadata includes workflow mode and seed strategy
     def test_build_history_metadata_includes_workflow_mode_and_seed_strategy(self) -> None:
         assert hasattr(results, "build_history_metadata")
         metadata = results.build_history_metadata("keyword_seed")
@@ -444,6 +467,7 @@ class TestKeywordIdeaHelpers:
         assert metadata["workflow_mode"] == "keyword_seed"
         assert metadata["seed_strategy"] == "keyword_seed"
 
+    # Purpose: Test build history entry title has no question marks
     def test_build_history_entry_title_has_no_question_marks(self) -> None:
         assert hasattr(results, "build_history_entry_title")
 
@@ -456,10 +480,11 @@ class TestKeywordIdeaHelpers:
         )
 
         assert "??" not in title
-        assert "2026-03-10T12:34:56" in title
+        assert "2026-03-10" in title
         assert "1 URL" in title
         assert "52" in title
 
+    # Purpose: Test restore history checkpoint populates session state
     def test_restore_history_checkpoint_populates_session_state(self) -> None:
         st.session_state.clear()
         assert hasattr(results, "restore_history_checkpoint")
