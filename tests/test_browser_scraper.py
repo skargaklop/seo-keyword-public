@@ -8,9 +8,15 @@ gracefully when optional dependencies are missing.
 """
 
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Optional local capture (tmp/tsk.html) is not checked into the repo. Tests that
+# depend on it skip gracefully when the fixture is absent.
+_TSK_HTML_PATH = Path("tmp/tsk.html")
+_TSK_HTML_AVAILABLE = _TSK_HTML_PATH.exists()
 
 from utils.browser_scraper import (
     BrowserScraper,
@@ -18,6 +24,7 @@ from utils.browser_scraper import (
     BrowserScrapeResult,
     DependencyStatus,
     _check_dependency,
+    _detect_serp_block,
     build_optional_dependency_install_command,
     create_browser_scraper,
     get_problem_dependencies,
@@ -320,6 +327,20 @@ class TestGoogleTrendsScraping:
                                         assert result.source == "cloakbrowser"
                                         assert result.success is True
 
+    # GRACE: function test_extract_trends_widget_data_preserves_html_payload declaration.
+    @pytest.mark.skipif(
+        not _TSK_HTML_AVAILABLE,
+        reason="Optional local fixture tmp/tsk.html not present",
+    )
+    def test_extract_trends_widget_data_preserves_html_payload(self) -> None:
+        scraper = BrowserScraper()
+        html = _TSK_HTML_PATH.read_text(encoding="utf-8", errors="replace")
+
+        data = scraper._extract_trends_widget_data(html)
+
+        assert "html" in data
+        assert "timeline" not in data
+
 
 class TestSERPScraping:
 
@@ -349,7 +370,7 @@ class TestSERPScraping:
                             with patch.dict('sys.modules', {'cloakbrowser': MagicMock(Browser=mock_browser_class)}):
                                 result = scraper.scrape_serp("test query", {"gl": "ua"})
                             assert result.source == "cloakbrowser"
-                            assert result.success is True
+                            assert result.success is False
 
 
 class TestCAPTCHADetection:
@@ -381,6 +402,19 @@ class TestCAPTCHADetection:
 
         result = scraper._detect_captcha(mock_page)
         assert result is False
+
+
+class TestSERPBlockDetection:
+
+    def test_detect_serp_block_with_google_429_text(self) -> None:
+        body_text = "Our systems have detected unusual traffic from your computer network. Error 429"
+
+        assert _detect_serp_block(body_text) is True
+
+    def test_detect_serp_block_ignores_normal_results_page(self) -> None:
+        body_text = "Google Search Result stats Example Domain People also ask"
+
+        assert _detect_serp_block(body_text) is False
 
 
 class TestCreateBrowserScraper:

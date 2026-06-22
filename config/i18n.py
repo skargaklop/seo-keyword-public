@@ -1559,6 +1559,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "Закодоване місцезнаходження (uule)",
         "en": "Encoded Location (uule)",
     },
+    "serp_local_headless": {
+        "ru": "Локальный SERP: запускать браузер headless",
+        "uk": "Локальний SERP: запускати браузер headless",
+        "en": "Local SERP: run browser headless",
+    },
     # --- Workflow i18n for Task 6 (PLAN 08-01) ---
     "serp_needs_keywords_warning": {
         "ru": "SERP анализ доступен только после извлечения ключевых слов. Сначала запустите анализ.",
@@ -2061,6 +2066,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Local Browser Trends Settings",
         "ru": "Настройки локального парсинга Google Trends",
         "uk": "Налаштування локального парсингу Google Trends",
+    },
+    "google_trends_local_headless": {
+        "en": "Local Trends: run browser headless",
+        "ru": "Локальный Trends: запускать браузер headless",
+        "uk": "Локальний Trends: запускати браузер headless",
     },
     "trends_local_warmup_wait": {
         "en": "Manual warmup wait (seconds)",

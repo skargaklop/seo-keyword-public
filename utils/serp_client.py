@@ -1383,7 +1383,10 @@ class SERPClient:
             # Fast path: no pagination needed (provider supports num directly)
             if start_param is None:
                 result = self._search_with_retry(query)
-                logger.info(f"SERP search completed for '{query}' via {self.provider} ({len(result.organic)}/{self.num_results} results)")
+                if result.success:
+                    logger.info(f"SERP search completed for '{query}' via {self.provider} ({len(result.organic)}/{self.num_results} results)")
+                else:
+                    logger.error(f"SERP search failed for '{query}' via {self.provider}: {result.error}")
                 return result
 
             # Pagination: collect results across multiple pages
@@ -1490,6 +1493,7 @@ class BrowserCloakbrowserAdapter(SERPProviderAdapter):
 
     provider_name = "browser_cloakbrowser"
     env_var = ""  # No API key required
+    max_retries = 1
 
     # FUNCTION_CONTRACT: BrowserCloakbrowserAdapter.__init__
     # Purpose: Store browser-adapter defaults without requiring API credentials.
@@ -1538,7 +1542,18 @@ class BrowserCloakbrowserAdapter(SERPProviderAdapter):
             if extra.get(key):
                 params[key] = extra[key]
 
-        scraper = create_browser_scraper(config=self.browser_config)
+        browser_config = self.browser_config
+        if browser_config is None:
+            settings = load_config()
+            browser_settings = dict(settings.get("scraper", {}))
+            raw_headless = extra["headless"] if "headless" in extra else settings.get("serp", {}).get("headless", False)
+            if isinstance(raw_headless, str):
+                browser_settings["headless"] = raw_headless.strip().lower() in {"1", "true", "yes", "on"}
+            else:
+                browser_settings["headless"] = bool(raw_headless)
+            browser_config = browser_settings
+
+        scraper = create_browser_scraper(config=browser_config)
         if scraper is None:
             return SERPSearchResult(
                 keyword=query,
@@ -1562,6 +1577,18 @@ class BrowserCloakbrowserAdapter(SERPProviderAdapter):
         organic = _normalize_organic_results(organic_payload, url_fields=("url", "link"))
         related_searches = _normalize_related_searches(parsed.get("related_searches") or [])
         people_also_ask = _normalize_people_also_ask(parsed.get("people_also_ask") or [])
+        if not organic:
+            status = (result.metadata or {}).get("status")
+            if status == "blocked":
+                error = "Google returned 429/block page"
+            else:
+                error = "Google SERP returned no organic results"
+            return SERPSearchResult(
+                keyword=query,
+                provider=self.provider_name,
+                success=False,
+                error=error,
+            )
 
         return _make_result(
             keyword=query,
@@ -1626,7 +1653,7 @@ def create_serp_client(config: Optional[dict] = None) -> Optional[SERPClient]:
 
     adapter = adapter_class(api_key)
     extra_params: dict[str, Any] = {}
-    for key in ("device", "search_type", "time_period", "google_domain", "location", "uule"):
+    for key in ("device", "search_type", "time_period", "google_domain", "location", "uule", "headless"):
         value = serp_config.get(key)
         if value is not None and value != "" and value != "any":
             extra_params[key] = value

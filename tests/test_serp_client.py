@@ -143,6 +143,18 @@ class _FakeBrowserScraper:
         )
 
 
+# Purpose: FakeEmptyBrowserScraper implementation
+class _FakeEmptyBrowserScraper:
+    # Purpose: scrape serp implementation
+    def scrape_serp(self, query, params):
+        return SimpleNamespace(
+            success=True,
+            errors=[],
+            parsed_content={"results": [], "people_also_ask": [], "related_searches": []},
+            metadata={"engine": "cloakbrowser", "status": "empty_results"},
+        )
+
+
 # Purpose: Test serp config loads
 def test_serp_config_loads():
     assert isinstance(SERP_CONFIG, dict)
@@ -719,6 +731,33 @@ def test_browser_cloakbrowser_adapter_normalizes_browser_result(monkeypatch):
     )
     assert result.people_also_ask == [SERPPeopleAlsoAsk("Question?", "Answer")]
     assert result.related_searches == ["related query"]
+
+
+# Purpose: Test browser cloakbrowser adapter fails when browser parser returns no organic results
+def test_browser_cloakbrowser_adapter_returns_failure_for_empty_browser_parse(monkeypatch):
+    monkeypatch.setattr(
+        "utils.browser_scraper.create_browser_scraper",
+        lambda config=None: _FakeEmptyBrowserScraper(),
+    )
+
+    result = BrowserCloakbrowserAdapter().search(
+        "wood shavings",
+        num_results=15,
+        gl="ua",
+        hl="uk",
+        timeout=30,
+        extra_params={"google_domain": "google.com.ua"},
+    )
+
+    assert result.keyword == "wood shavings"
+    assert result.provider == "browser_cloakbrowser"
+    assert result.success is False
+    assert "no organic" in result.error.lower()
+
+
+# Purpose: Test browser cloakbrowser adapter avoids repeated local browser retries
+def test_browser_cloakbrowser_adapter_has_single_attempt_policy():
+    assert BrowserCloakbrowserAdapter.max_retries == 1
 
 
 # Purpose: Test browser cloakbrowser adapter returns failure when unavailable

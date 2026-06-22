@@ -269,6 +269,12 @@ def _build_sidebar_config_updates(
     serp_config["google_domain"] = values.get("serp_google_domain", "google.com")
     serp_config["location"] = values.get("serp_city", "")
     serp_config["uule"] = values.get("serp_uule", "")
+    serp_config["headless"] = bool(
+        values.get(
+            "serp_headless",
+            serp_config.get("headless", False),
+        )
+    )
 
     ui_prefs = current_config.setdefault("ui", {})
     ui_prefs["language"] = values["ui_lang"]
@@ -429,6 +435,15 @@ def _build_sidebar_config_updates(
     trends_config["show_confidence_metadata"] = bool(
         values.get("google_trends_show_confidence", trends_config.get("show_confidence_metadata", True))
     )
+    trends_config["headless"] = bool(
+        values.get(
+            "google_trends_headless",
+            trends_config.get(
+                "headless",
+                GOOGLE_TRENDS_CONFIG.get("headless", False),
+            ),
+        )
+    )
     trends_config["manual_start_wait"] = int(values.get(
         "trends_manual_warmup",
         trends_config.get(
@@ -520,6 +535,7 @@ def _build_serp_sidebar_values(
     serp_google_domain: str,
     serp_city: str,
     serp_uule: str,
+    serp_headless: bool,
 ) -> Dict[str, Any]:
     return {
         "serp_provider": SERP_PROVIDER_OPTIONS.get(serp_selected_provider, "serper_dev")
@@ -535,6 +551,7 @@ def _build_serp_sidebar_values(
         "serp_google_domain": serp_google_domain,
         "serp_city": serp_city,
         "serp_uule": serp_uule,
+        "serp_headless": serp_headless,
     }
 
 # FUNCTION_CONTRACT: _load_saved_ui
@@ -810,6 +827,7 @@ def render_sidebar() -> Dict[str, Any]:
         serp_num = 10
         serp_gl = "ua"
         serp_hl = "uk"
+        serp_headless = bool(current_serp_config.get("headless", False))
 
         if not available_serp:
             st.info(t("serp_no_keys"))
@@ -930,6 +948,16 @@ def render_sidebar() -> Dict[str, Any]:
                 t("serp_uule"),
                 value=current_serp_config.get("uule", ""),
             )
+            serp_provider_value = SERP_PROVIDER_OPTIONS.get(
+                serp_selected_provider,
+                current_serp_provider,
+            )
+            if serp_provider_value == "browser_cloakbrowser":
+                serp_headless = st.checkbox(
+                    t("serp_local_headless"),
+                    value=serp_headless,
+                    key="serp_local_headless_checkbox",
+                )
 
         serp_sidebar_values = _build_serp_sidebar_values(
             current_serp_config,
@@ -944,6 +972,7 @@ def render_sidebar() -> Dict[str, Any]:
             serp_google_domain if available_serp else "google.com",
             serp_city if available_serp else "",
             serp_uule if available_serp else "",
+            serp_headless,
         )
 
         st.divider()
@@ -1479,9 +1508,20 @@ def render_sidebar() -> Dict[str, Any]:
 
         # Local browser trends settings
         BROWSER_TRENDS_PROVIDERS = {"browser_scraper_trends", "google_trends_auto"}
+        google_trends_headless = bool(
+            current_trends_config.get(
+                "headless",
+                GOOGLE_TRENDS_CONFIG.get("headless", False),
+            )
+        )
         if google_trends_provider in BROWSER_TRENDS_PROVIDERS:
             _render_section_header(t("trends_local_settings_header"), t("sidebar_trends_local_desc"), "orange")
 
+            google_trends_headless = st.checkbox(
+                t("google_trends_local_headless"),
+                value=google_trends_headless,
+                key="google_trends_local_headless_checkbox",
+            )
             trends_manual_warmup = st.number_input(
                 t("trends_local_warmup_wait"),
                 min_value=0,
@@ -1998,6 +2038,7 @@ def render_sidebar() -> Dict[str, Any]:
                             "google_trends_cache_ttl_hours": google_trends_cache_ttl_hours,
                             "google_trends_max_keywords_per_request": google_trends_max_keywords_per_request,
                             "google_trends_show_confidence": google_trends_show_confidence,
+                            "google_trends_headless": google_trends_headless,
                             "trends_manual_warmup": trends_manual_warmup,
                             "trends_min_delay": trends_min_delay,
                             "trends_max_delay": trends_max_delay,
@@ -2049,6 +2090,7 @@ def render_sidebar() -> Dict[str, Any]:
             "default_language": google_trends_default_language,
             "default_timezone": google_trends_default_timezone,
             "force_refresh": google_trends_force_refresh,
+            "headless": google_trends_headless,
             "manual_start_wait": trends_manual_warmup,
             "min_delay": trends_min_delay,
             "max_delay": trends_max_delay,

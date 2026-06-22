@@ -552,6 +552,20 @@ class TestTrendsColumns:
 
         assert result.empty
 
+    # Purpose: Test add trends columns preserves existing average when averages are absent
+    def test_add_trends_columns_preserves_existing_average_without_averages(self) -> None:
+        df = pd.DataFrame({"Keyword": ["seo"], "Average Interest": [79.51]})
+
+        trends_data = {
+            "geo": "UA",
+            "timeframe": "today 12-m",
+            "provider": "google_trends_direct",
+        }
+
+        result = ExcelExporter.add_trends_columns(df, trends_data)
+
+        assert result["Average Interest"].iloc[0] == 79.51
+
     # Purpose: Test add trends columns no data
     def test_add_trends_columns_no_data(self) -> None:
         df = pd.DataFrame({"Keyword": ["test"]})

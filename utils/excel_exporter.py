@@ -811,14 +811,14 @@ class ExcelExporter:
 
         return result
 
-    # FUNCTION_CONTRACT: add_trends_columns
-    # Purpose: Add Google Trends data columns (Phase 10 Task 12)
-    # Input: df (pd.DataFrame), trends_data (Dict[str, Any])
-    # Output: pd.DataFrame
-    # Side Effects: Returns new DataFrame with Trends columns
-    # Business Rules: Adds Average Interest, geo, timeframe, provider columns; maps by keyword
-    # Failure Modes: Returns original DataFrame on error
-    # LINKS: requirements.xml#EXPT-10-01, PLAN 10-02 Task 12
+# FUNCTION_CONTRACT: add_trends_columns
+# Purpose: Add Google Trends data columns (Phase 10 Task 12)
+# Input: df (pd.DataFrame), trends_data (Dict[str, Any])
+# Output: pd.DataFrame
+# Side Effects: Returns new DataFrame with Trends columns
+# Business Rules: Adds Average Interest when new averages are supplied, preserves existing Average Interest otherwise, and adds geo/timeframe/provider columns; maps by keyword
+# Failure Modes: Returns original DataFrame on error
+# LINKS: requirements.xml#EXPT-10-01, PLAN 10-02 Task 12
     @staticmethod
     def add_trends_columns(
         df: pd.DataFrame,
@@ -840,8 +840,11 @@ class ExcelExporter:
 
         result = df.copy()
 
+        averages = trends_data.get("averages", {}) or {}
+
         # Initialize columns
-        result["Average Interest"] = 0.0
+        if "Average Interest" not in result.columns:
+            result["Average Interest"] = 0.0 if averages else ""
         result["Trends Geo"] = ""
         result["Trends Timeframe"] = ""
         result["Trends Provider"] = ""
@@ -850,7 +853,6 @@ class ExcelExporter:
         result["Trends Provider Metadata"] = ""
 
         # Map averages by keyword
-        averages = trends_data.get("averages", {})
         if averages:
             for idx, row in result.iterrows():
                 keyword = str(row.get(keyword_col, "")).lower()

@@ -46,6 +46,18 @@ try:
 except ImportError:
     _save_session_state = None
 
+try:
+    from utils.browser_scraper import _parse_trends_structural_html
+except ImportError:
+    _parse_trends_structural_html = None
+
+
+# The real-page regression test below depends on an optional local capture
+# (tmp/tsk.html) that is not checked into the repo. Skip when it is absent so
+# the suite stays green on machines without the fixture.
+_TSK_HTML_PATH = Path("tmp/tsk.html")
+_TSK_HTML_AVAILABLE = _TSK_HTML_PATH.exists()
+
 
 # ---- CSV Fixtures (derived from real Google Trends single-keyword CSV) ----
 
@@ -611,6 +623,233 @@ class TestGoogleTrendsResultConstruction:
 
         assert len(result.failures) == 0
 
+    @pytest.mark.skipif(
+        not hasattr(BrowserScraperTrendsAdapter, 'get_trends'),
+        reason="Adapter not available",
+    )
+    # GRACE: function test_rendered_html_parses_related_queries_and_regions declaration.
+    def test_rendered_html_parses_related_queries_and_regions(self) -> None:
+        adapter = self._make_adapter()
+        request = GoogleTrendsRequest(keywords=["тцк"])
+
+        html = """
+        <div class="widget-container">
+          <section class="geo-map-widget">
+            <div class="item" role="listitem">
+              <span class="label-text">Волинська область</span>
+              <span class="progress-value">100</span>
+            </div>
+            <div class="item" role="listitem">
+              <span class="label-text">Рівненська область</span>
+              <span class="progress-value">84</span>
+            </div>
+          </section>
+          <section class="related-queries-widget">
+            <div class="item" role="listitem">
+              <span class="label-text">анджеліна джолі тцк</span>
+              <span class="progress-value">Прорив</span>
+            </div>
+            <div class="item" role="listitem">
+              <span class="label-text">seo news</span>
+              <span class="progress-value">+1250%</span>
+            </div>
+          </section>
+        </div>
+        """
+        mock_result = BrowserScrapeResult(
+            source="cloakbrowser",
+            success=True,
+            extracted_data={
+                "html": html,
+                "timeline": [
+                    {"time": "1748736000", "formatted_time": "2025-06-01", "value": 45},
+                ],
+            },
+        )
+
+        with patch.object(adapter, 'is_available', return_value=True):
+            with patch('utils.browser_scraper.BrowserScraper') as MockScraper:
+                mock_scraper_instance = MockScraper.return_value
+                mock_scraper_instance.scrape_google_trends.return_value = mock_result
+
+                result = adapter.get_trends(request)
+
+        assert len(result.interest_over_time) == 1
+        assert len(result.region_rows) >= 2
+        assert result.region_rows[0].region == "Волинська область"
+        assert result.region_rows[0].value == 100
+        assert len(result.related_queries_rising) >= 2
+        assert any(
+            item.label == "анджеліна джолі тцк" and item.value == "Прорив"
+            for item in result.related_queries_rising
+        )
+        assert any(
+            item.value.replace(" ", "") == "+1250%"
+            for item in result.related_queries_rising
+        )
+
+    @pytest.mark.skipif(
+        not hasattr(BrowserScraperTrendsAdapter, 'get_trends'),
+        reason="Adapter not available",
+    )
+    # GRACE: function test_rendered_html_without_csv_still_returns_data declaration.
+    def test_rendered_html_without_csv_still_returns_data(self) -> None:
+        adapter = self._make_adapter()
+        request = GoogleTrendsRequest(keywords=["тцк"])
+
+        html = """
+        <div class="widget-container">
+          <section class="related-queries-widget">
+            <div class="item" role="listitem">
+              <span class="label-text">анджеліна джолі тцк</span>
+              <span class="progress-value">Прорив</span>
+            </div>
+          </section>
+          <section class="geo-map-widget">
+            <div class="item" role="listitem">
+              <span class="label-text">Волинська область</span>
+              <span class="progress-value">100</span>
+            </div>
+          </section>
+        </div>
+        """
+        mock_result = BrowserScrapeResult(
+            source="cloakbrowser",
+            success=True,
+            extracted_data={"html": html},
+        )
+
+        with patch.object(adapter, 'is_available', return_value=True):
+            with patch('utils.browser_scraper.BrowserScraper') as MockScraper:
+                mock_scraper_instance = MockScraper.return_value
+                mock_scraper_instance.scrape_google_trends.return_value = mock_result
+
+                result = adapter.get_trends(request)
+
+        assert result.failures == []
+        assert len(result.related_queries_rising) >= 1
+        assert len(result.region_rows) >= 1
+        assert result.interest_over_time == []
+
+    @pytest.mark.skipif(
+        not hasattr(BrowserScraperTrendsAdapter, 'get_trends'),
+        reason="Adapter not available",
+    )
+    # GRACE: function test_rendered_html_hidden_timeseries_table_falls_back_to_interest_over_time declaration.
+    def test_rendered_html_hidden_timeseries_table_falls_back_to_interest_over_time(self) -> None:
+        adapter = self._make_adapter()
+        request = GoogleTrendsRequest(keywords=["seo"])
+
+        html = """
+        <div class="widget-container">
+          <table>
+            <thead><tr><th>Дата</th><th>Індекс</th></tr></thead>
+            <tbody>
+              <tr><td>22 черв. 2025 р.</td><td>60</td></tr>
+              <tr><td>29 черв. 2025 р.</td><td>79</td></tr>
+            </tbody>
+          </table>
+        </div>
+        """
+        mock_result = BrowserScrapeResult(
+            source="cloakbrowser",
+            success=True,
+            extracted_data={"html": html},
+        )
+
+        with patch.object(adapter, 'is_available', return_value=True):
+            with patch('utils.browser_scraper.BrowserScraper') as MockScraper:
+                mock_scraper_instance = MockScraper.return_value
+                mock_scraper_instance.scrape_google_trends.return_value = mock_result
+
+                result = adapter.get_trends(request)
+
+        assert len(result.interest_over_time) == 2
+        assert result.interest_over_time[0].formatted_time == "22 черв. 2025 р."
+        assert result.interest_over_time[0].values["seo"] == 60
+        assert result.interest_over_time[1].formatted_time == "29 черв. 2025 р."
+        assert result.interest_over_time[1].values["seo"] == 79
+
+    @pytest.mark.skipif(
+        _parse_trends_structural_html is None,
+        reason="Implementation not yet available",
+    )
+    @pytest.mark.skipif(
+        not _TSK_HTML_AVAILABLE,
+        reason="Optional local fixture tmp/tsk.html not present",
+    )
+    def test_real_tmp_tsk_html_parses_many_timeline_rows(self) -> None:
+        html = _TSK_HTML_PATH.read_text(encoding="utf-8", errors="replace")
+        result = _parse_trends_structural_html(html)
+
+        assert len(result) >= 50
+        assert all(row["value"] > 0 for row in result)
+
+    @pytest.mark.skipif(
+        _parse_trends_structural_html is None,
+        reason="Implementation not yet available",
+    )
+    def test_structural_timeline_parser_preserves_opaque_first_cell_text(self) -> None:
+        html = """
+        <div class="widget-container">
+          <table>
+            <tbody>
+              <tr><td>2025-06-01</td><td>11</td></tr>
+              <tr><td>06/08/2025</td><td>22</td></tr>
+              <tr><td>22 черв. 2025 р.</td><td>33</td></tr>
+              <tr><td>1748736000</td><td>44</td></tr>
+              <tr><td>any opaque label</td><td>55</td></tr>
+            </tbody>
+          </table>
+        </div>
+        """
+        result = _parse_trends_structural_html(html)
+
+        assert len(result) == 5
+        assert [row["formatted_time"] for row in result] == [
+            "2025-06-01",
+            "06/08/2025",
+            "22 черв. 2025 р.",
+            "1748736000",
+            "any opaque label",
+        ]
+
+    @pytest.mark.skipif(
+        not hasattr(BrowserScraperTrendsAdapter, 'get_trends'),
+        reason="Adapter not available",
+    )
+    def test_adapter_preserves_row_order_for_twelve_structural_rows(self) -> None:
+        adapter = self._make_adapter()
+        request = GoogleTrendsRequest(keywords=["seo"])
+
+        rows_html = "".join(
+            f"<tr><td>row {i:02d}</td><td>{(i % 100) + 1}</td></tr>" for i in range(12)
+        )
+        html = f"""
+        <div class="widget-container">
+          <table>
+            <tbody>{rows_html}</tbody>
+          </table>
+        </div>
+        """
+        mock_result = BrowserScrapeResult(
+            source="cloakbrowser",
+            success=True,
+            extracted_data={"html": html},
+        )
+
+        with patch.object(adapter, 'is_available', return_value=True):
+            with patch('utils.browser_scraper.BrowserScraper') as MockScraper:
+                mock_scraper_instance = MockScraper.return_value
+                mock_scraper_instance.scrape_google_trends.return_value = mock_result
+
+                result = adapter.get_trends(request)
+
+        assert len(result.interest_over_time) == 12
+        assert [point.formatted_time for point in result.interest_over_time] == [
+            f"row {i:02d}" for i in range(12)
+        ]
+
     # ---- Blocked / 429 ----
 
     @pytest.mark.skipif(
@@ -1037,6 +1276,45 @@ class TestBrowserScraperTrendsExecution:
         assert result.metadata["mode"] == "csv_download"
         assert result.extracted_data["status"] == "csv_downloaded"
         assert len(result.extracted_data["timeline"]) == 2
+
+    @pytest.mark.skipif(
+        not hasattr(BrowserScraper, "_execute_cloakbrowser_trends"),
+        reason="Browser scraper Trends execution is unavailable",
+    )
+    # GRACE: function test_successful_csv_payload_includes_rendered_html declaration.
+    def test_successful_csv_payload_includes_rendered_html(self, monkeypatch) -> None:
+        page = _FakeTrendsPage(
+            body_text="Interest over time",
+            csv_content=WEEKLY_EN_CSV,
+            responses=[_FakeResponse(200, "document")],
+        )
+        html = "<div class='widget-container'><table><tbody><tr><td>22 черв. 2025 р.</td><td>60</td></tr><tr><td>29 черв. 2025 р.</td><td>79</td></tr></tbody></table></div>"
+        content_calls = []
+
+        def _content() -> str:
+            content_calls.append(True)
+            return html
+
+        page.content = _content  # type: ignore[attr-defined]
+        _install_fake_cloakbrowser(monkeypatch, page)
+
+        scraper = self._make_scraper()
+        result = scraper._execute_cloakbrowser_trends(
+            ["seo"],
+            {
+                "geo": "UA",
+                "timeframe": "today 12-m",
+                "category": 0,
+                "gprop": "",
+                "hl": "en-US",
+                "tz": 0,
+                "state_file": "",
+                "headless": False,
+            },
+        )
+
+        assert content_calls, "Expected the scraper to capture page.content()"
+        assert result.extracted_data["html"] == html
 
     @pytest.mark.skipif(
         not hasattr(BrowserScraper, "_execute_cloakbrowser_trends"),

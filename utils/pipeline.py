@@ -21,6 +21,7 @@ from utils.request_cache import (
 )
 from utils.scraper import WebScraper
 from utils.google_trends_client import (
+    GoogleTrendsClient,
     GoogleTrendsRequest,
     GoogleTrendsResult,
     TrendsOrchestrator,
@@ -1852,6 +1853,10 @@ def google_trends_result_to_tables(
     result: GoogleTrendsResult,
 ) -> Dict[str, pd.DataFrame]:
     request = result.request
+    averages = dict(result.averages or {})
+    if not averages and result.interest_over_time:
+        averages = GoogleTrendsClient._calculate_averages(result.interest_over_time)
+
     averages_rows = [
         {
             "Keyword": keyword,
@@ -1860,7 +1865,7 @@ def google_trends_result_to_tables(
             "Timeframe": request.timeframe,
             "Provider": result.provider,
         }
-        for keyword, value in sorted(result.averages.items())
+        for keyword, value in sorted(averages.items())
     ]
 
     interest_rows: List[Dict[str, Any]] = []

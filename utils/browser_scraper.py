@@ -49,7 +49,7 @@ from utils.logger import logger
 # LINKS: requirements.xml#UC-010, .planning/phases/12-browser-google-parsing-prompt-cleanup/12-01-PLAN.md#task-12-02
 # MODULE_MAP: utils/browser_scraper.py
 # Public Functions: BrowserScraper.check_dependencies, BrowserScraper.is_available, BrowserScraper.dependency_install_message, BrowserScraper.scrape_google_trends, BrowserScraper.scrape_serp, create_browser_scraper, build_optional_dependency_install_command, get_problem_dependencies, get_dependency_install_message, get_no_browser_engine_error
-# Private Helpers: _check_dependency, _check_playwright_binary, _build_cache_key, _parse_with_trafilatura, _execute_cloakbrowser_trends, _execute_cloakbrowser_serp, _wait_for_dynamic_content, _detect_captcha, _load_js_parser, _handle_cookie_consent, _click_next_page, _extract_serp_data, _extract_with_trafilatura, _apply_rate_limit, _detect_trends_block, _parse_trends_csv, _validate_trends_keyword, _extract_trends_widget_data, _load_session_state, _save_session_state
+# Private Helpers: _check_dependency, _check_playwright_binary, _build_cache_key, _parse_with_trafilatura, _execute_cloakbrowser_trends, _execute_cloakbrowser_serp, _wait_for_dynamic_content, _detect_captcha, _load_js_parser, _handle_cookie_consent, _click_next_page, _extract_serp_data, _extract_with_trafilatura, _apply_rate_limit, _detect_trends_block, _parse_trends_csv, _parse_trends_structural_html, _validate_trends_keyword, _extract_trends_widget_data, _load_session_state, _save_session_state
 # Key Semantic Blocks: block_browser_dependency_check, block_browser_trends_csv_download, block_browser_serp_parsing, block_browser_handle_pagination, block_browser_cookie_handling, block_browser_paa_extraction, block_browser_rich_snippets
 # Critical Flows: Dependency check → engine selection → stealth config → cookie handling → pagination → SERP/Trends extraction → trafilatura fallback → result normalization
 # Verification: verification-plan.xml#V-10-BROWSER-SCRAPER, Phase 11 Task 11-14 validation tests, Phase 12 grep guards
@@ -301,6 +301,23 @@ def _detect_trends_block(body_text: str) -> bool:
     return any(marker in text for marker in markers)
 
 
+def _detect_serp_block(body_text: str) -> bool:
+    if not body_text:
+        return False
+    text = body_text.lower()
+    markers = [
+        "too many requests",
+        "unusual traffic",
+        "automated queries",
+        "our systems have detected",
+        "error 429",
+        "not a robot",
+        "captcha",
+        "detected unusual traffic",
+    ]
+    return any(marker in text for marker in markers)
+
+
 # FUNCTION_CONTRACT: _is_trends_block_response
 # Purpose: Identify a Google Trends navigation response that indicates a real block
 # Input: response (Any)
@@ -423,6 +440,57 @@ def _parse_trends_csv(csv_content: str) -> list[dict[str, Any]]:
         logger.warning("No data rows found in Trends CSV")
 
     return result
+
+
+# FUNCTION_CONTRACT: _parse_trends_structural_html
+# Purpose: Parse rendered Google Trends HTML into structured timeline rows
+# Input: html (str)
+# Output: list[dict[str, Any]]
+# Side Effects: none
+# Business Rules: Scan all tables structurally and accept only candidates with multiple data rows and 0..100/<1 second-column values; preserve raw first-cell text as formatted_time and stable row-order sort keys
+# Failure Modes: Returns empty list when no clear timeline table exists
+# LINKS: utils/browser_scraper.py, utils/browser_scraper_trends.py
+def _parse_trends_structural_html(html: str) -> list[dict[str, Any]]:
+    if not html or not html.strip():
+        return []
+    try:
+        from bs4 import BeautifulSoup
+    except Exception:
+        return []
+
+    soup = BeautifulSoup(html, "html.parser")
+    results: list[dict[str, Any]] = []
+    for table_index, table in enumerate(soup.find_all("table")):
+        candidate_rows: list[dict[str, Any]] = []
+        for row_index, row in enumerate(table.find_all("tr")):
+            cells = [cell.get_text(" ", strip=True) for cell in row.find_all(["td", "th"])]
+            if len(cells) < 2:
+                continue
+            first_cell = cells[0].strip()
+            second_cell = cells[1].strip()
+            if not first_cell or not second_cell:
+                continue
+            value_text = second_cell.replace("%", "").strip()
+            value: Optional[int]
+            if second_cell == "<1" or second_cell == "<1%":
+                value = 0
+            elif value_text.isdigit():
+                value = int(value_text)
+            else:
+                continue
+            if value < 0 or value > 100:
+                continue
+            candidate_rows.append(
+                {
+                    "time": f"{table_index:04d}:{row_index:06d}",
+                    "formatted_time": first_cell,
+                    "value": value,
+                    "sort_key": (table_index, row_index),
+                }
+            )
+        if len(candidate_rows) >= 2:
+            return candidate_rows
+    return results
 
 
 # FUNCTION_CONTRACT: _validate_trends_keyword
@@ -833,6 +901,16 @@ class BrowserScraper:
             return False
         return _detect_trends_block(text)
 
+    def _detect_serp_block(self, page: Any) -> bool:
+        try:
+            text = page.locator("body").inner_text(timeout=5_000)
+        except Exception:
+            try:
+                text = page.content()
+            except Exception:
+                return False
+        return _detect_serp_block(text)
+
     # FUNCTION_CONTRACT: _maybe_accept_trends_cookies
     # Purpose: Accept cookie consent on Google Trends in EN/RU/UA
     # Input: page (Any) — browser page object
@@ -984,7 +1062,17 @@ class BrowserScraper:
         if args:
             candidate = args[0]
             if isinstance(candidate, str) and candidate.strip():
-                if "Interest over time" in candidate or "," in candidate:
+                stripped_candidate = candidate.lstrip()
+                if stripped_candidate.startswith("<") or "</" in candidate or "<div" in candidate:
+                    return {"html": candidate}
+                if "Interest over time" in candidate or (
+                    candidate.splitlines() and any(
+                        line.startswith("Day,")
+                        or line.startswith("Week,")
+                        or line.startswith("Month,")
+                        for line in candidate.splitlines()[:2]
+                    )
+                ):
                     return {"timeline": self._parse_trends_csv(candidate)}
                 return {"html": candidate}
 
@@ -1064,7 +1152,7 @@ class BrowserScraper:
     # Input: keywords (List[str]), params (Dict[str, Any])
     # Output: BrowserScrapeResult
     # Side Effects: Launches browser, navigates to Google Trends, downloads CSV
-    # Business Rules: Validates single keyword, handles block detection, cookie acceptance, chart loading, CSV download and parsing
+# Business Rules: Validates single keyword, handles block detection, cookie acceptance, chart loading, CSV download and parsing, and preserves rendered HTML for structural downstream fallbacks when CSV rows are missing
     # Failure Modes: Returns failure result on block/429, timeout, or parse errors
     # LINKS: requirements.xml#UC-010, beta_trends_parsing.py
     # GRACE_LOG_MARKER: ENTER_trends_csv, EXIT_trends_csv, ERROR_trends_csv
@@ -1231,8 +1319,16 @@ class BrowserScraper:
                     )
                 raise
 
-            # Parse CSV into structured data
+            html_content = ""
+            try:
+                html_content = page.content()
+            except Exception:
+                html_content = ""
+
+            # Parse CSV into structured data; fall back to rendered structural HTML when CSV is empty
             parsed_data = self._parse_trends_csv(csv_content)
+            if not parsed_data and html_content:
+                parsed_data = _parse_trends_structural_html(html_content)
 
             # Save session state
             if state_file:
@@ -1248,6 +1344,7 @@ class BrowserScraper:
                 success=True,
                 extracted_data={
                     "timeline": parsed_data,
+                    "html": html_content,
                     "status": "csv_downloaded",
                 },
                 metadata={
@@ -1527,6 +1624,24 @@ class BrowserScraper:
         browser = None
         page = None
 
+        def _failure(message: str, status: str, metadata: Optional[Dict[str, Any]] = None) -> BrowserScrapeResult:
+            logger.warning(f"[GRACE:ERROR_serp_parsing] {message}")
+            result_metadata = {
+                "engine": "cloakbrowser",
+                "mode": "serp",
+                "status": status,
+                "query": query,
+            }
+            if metadata:
+                result_metadata.update(metadata)
+            return BrowserScrapeResult(
+                source="cloakbrowser",
+                cache_key=cache_key,
+                success=False,
+                errors=[message],
+                metadata=result_metadata,
+            )
+
         try:
             self._apply_rate_limit()
 
@@ -1567,6 +1682,12 @@ class BrowserScraper:
 
             # Handle cookie consent
             self._handle_cookie_consent(page)
+            if self._detect_serp_block(page):
+                return _failure(
+                    "Google returned 429/block page",
+                    "blocked",
+                    {"google_domain": google_domain},
+                )
 
             # Execute search
             logger.info(f"[GRACE:serp_parsing] Executing search for: {query}")
@@ -1579,6 +1700,12 @@ class BrowserScraper:
             with page.expect_navigation(wait_until="domcontentloaded", timeout=self.config.timeout_seconds * 1000):
                 search_box.press("Enter")
             page.wait_for_timeout(1000)
+            if self._detect_serp_block(page):
+                return _failure(
+                    "Google returned 429/block page",
+                    "blocked",
+                    {"google_domain": google_domain},
+                )
 
             # SEMANTIC_BLOCK: block_browser_handle_pagination
             # Pagination loop for multiple pages
@@ -1623,7 +1750,21 @@ class BrowserScraper:
                     raw_results = page.evaluate(batch_parse_js) or []
                 except Exception as e:
                     logger.warning(f"[GRACE:serp_parsing] Parse error: {e}")
+                    err_lower = str(e).lower()
+                    if "target page" in err_lower and "closed" in err_lower:
+                        return _failure(
+                            "Browser closed during SERP parsing",
+                            "browser_closed",
+                            {"google_domain": google_domain, "pages_scraped": page_num},
+                        )
                     raw_results = []
+
+                if not raw_results and self._detect_serp_block(page):
+                    return _failure(
+                        "Google returned 429/block page",
+                        "blocked",
+                        {"google_domain": google_domain, "pages_scraped": page_num},
+                    )
 
                 # Deduplicate by URL
                 seen_urls = set(r.get("url") for r in all_results if r.get("url"))
@@ -1657,6 +1798,19 @@ class BrowserScraper:
                 elif page_num >= pages_max:
                     logger.info(f"[GRACE:serp_parsing] Reached max pages ({pages_max})")
                     break
+
+            if not all_results:
+                if page is not None and self._detect_serp_block(page):
+                    return _failure(
+                        "Google returned 429/block page",
+                        "blocked",
+                        {"google_domain": google_domain, "pages_scraped": page_num},
+                    )
+                return _failure(
+                    "Google SERP returned no organic results",
+                    "empty_results",
+                    {"google_domain": google_domain, "pages_scraped": page_num},
+                )
 
             logger.info(
                 f"[GRACE:EXIT_serp_parsing] Success: {page_num} pages, "
@@ -1702,6 +1856,16 @@ class BrowserScraper:
                 cache_key=cache_key,
                 success=False,
                 errors=errors,
+            )
+        except TargetClosedError:
+            errors.append("Browser closed during SERP navigation (TargetClosedError)")
+            logger.warning("[GRACE:ERROR_serp_parsing] Browser closed during SERP navigation")
+            return BrowserScrapeResult(
+                source="cloakbrowser",
+                cache_key=cache_key,
+                success=False,
+                errors=errors,
+                metadata={"engine": "cloakbrowser", "mode": "serp", "status": "browser_closed"},
             )
         except Exception as e:
             errors.append(f"Cloakbrowser SERP error: {str(e)}")

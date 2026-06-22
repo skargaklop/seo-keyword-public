@@ -2380,6 +2380,9 @@ def render_keyword_candidate_selector_with_sources(
                         "selection_prefix": selection_prefix,
                     }
                 )
+            st.session_state[
+                make_selection_key(cleaned_keyword, picked_url, selection_prefix)
+            ] = True
         st.session_state[SESSION_KEY_STAGED_KEYWORDS] = current_staged
         # Clear the textarea so the user can add another batch without re-submitting
         # the old text on the next rerun.
@@ -3875,13 +3878,18 @@ def render_crawl_math_report(
 # Input: result (Any)
 # Output: Dict[str, Any]
 # Side Effects: None
-# Business Rules: Preserves provider confidence, cache metadata, integrity warnings, and caveats for export surfaces
+# Business Rules: Preserves provider confidence, averages, geo/timeframe, cache metadata, integrity warnings, and caveats for export surfaces
 # Failure Modes: Returns empty fields when metadata is missing
 # LINKS: PLAN 13-03
 def _build_google_trends_export_metadata(result: Any) -> Dict[str, Any]:
     return {
         "provider": getattr(result, "provider", ""),
         "data_confidence": getattr(result, "data_confidence", ""),
+        "averages": dict(getattr(result, "averages", {}) or {}),
+        "geo": getattr(getattr(result, "request", None), "geo", "")
+        or getattr(result, "geo", ""),
+        "timeframe": getattr(getattr(result, "request", None), "timeframe", "")
+        or getattr(result, "timeframe", ""),
         "warnings": list(getattr(result, "warnings", []) or []),
         "integrity_warnings": list(getattr(result, "integrity_warnings", []) or []),
         "provider_metadata": dict(getattr(result, "provider_metadata", {}) or {}),

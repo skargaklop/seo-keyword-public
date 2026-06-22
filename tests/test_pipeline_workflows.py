@@ -21,7 +21,11 @@ import streamlit as st
 
 import utils.pipeline as pipeline
 from utils.scraper import ScrapedContent
-from utils.google_trends_client import GoogleTrendsRequest, GoogleTrendsResult
+from utils.google_trends_client import (
+    GoogleTrendsInterestPoint,
+    GoogleTrendsRequest,
+    GoogleTrendsResult,
+)
 
 
 # Purpose:  DummyProgress implementation
@@ -554,6 +558,34 @@ class TestGoogleTrendsWorkflow:
         assert orchestrator_calls[1]["keywords"] == ["alpha keyword"]
         assert orchestrator_calls[1]["provider"] == "serpapi_trends"
         assert st.session_state.google_trends_result is result
+
+    # Purpose: Test trends tables calculate missing averages from timeline data
+    def test_google_trends_tables_calculate_missing_zero_average_from_timeline(self) -> None:
+        request = GoogleTrendsRequest(keywords=["ice cream"], geo="UA", timeframe="today 12-m")
+        result = GoogleTrendsResult(
+            request=request,
+            provider="browser_scraper_trends",
+            interest_over_time=[
+                GoogleTrendsInterestPoint(
+                    time="2026-06-07",
+                    formatted_time="Jun 7, 2026",
+                    values={"ice cream": 0},
+                ),
+                GoogleTrendsInterestPoint(
+                    time="2026-06-14",
+                    formatted_time="Jun 14, 2026",
+                    values={"ice cream": 0},
+                ),
+            ],
+            averages={},
+        )
+
+        tables = pipeline.google_trends_result_to_tables(result)
+        averages = tables["averages"]
+
+        assert len(averages) == 1
+        assert averages.iloc[0]["Keyword"] == "ice cream"
+        assert averages.iloc[0]["Average Interest"] == 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -245,6 +245,7 @@ serp:
   google_domain: google.com.ua
   location: ''
   uule: ''
+  headless: false
 ui:
   language: ru
   provider: Omniroute
