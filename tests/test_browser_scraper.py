@@ -13,11 +13,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Optional local capture (tmp/tsk.html) is not checked into the repo. Tests that
-# depend on it skip gracefully when the fixture is absent.
-_TSK_HTML_PATH = Path("tmp/tsk.html")
-_TSK_HTML_AVAILABLE = _TSK_HTML_PATH.exists()
-
 from utils.browser_scraper import (
     BrowserScraper,
     BrowserScraperConfig,
@@ -29,6 +24,11 @@ from utils.browser_scraper import (
     create_browser_scraper,
     get_problem_dependencies,
 )
+
+# Optional local capture (tmp/tsk.html) is not checked into the repo. Tests that
+# depend on it skip gracefully when the fixture is absent.
+_TSK_HTML_PATH = Path("tmp/tsk.html")
+_TSK_HTML_AVAILABLE = _TSK_HTML_PATH.exists()
 
 
 class TestDependencyChecking:
