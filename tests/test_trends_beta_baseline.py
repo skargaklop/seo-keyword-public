@@ -13,6 +13,23 @@ from unittest.mock import MagicMock, patch
 
 from utils.browser_scraper import BrowserScraper, BrowserScraperConfig
 
+# --- Cloakbrowser mocking that works whether or not the package is installed ---
+# The real cloakbrowser package is optional (see utils/browser_scraper.py import guard).
+# patch("cloakbrowser.launch") requires the package to be importable, which fails on a
+# clean install. Inject a fake module into sys.modules instead so both installed and
+# uninstalled environments run the same code path.
+def _patch_cloakbrowser_launch(launch_mock):
+    """Return a context manager exposing a fake ``cloakbrowser.launch``.
+
+    ``launch_mock`` is whatever the source's ``from cloakbrowser import launch``
+    should resolve to (a MagicMock, or a real callable). The returned object is a
+    context manager to be used in a ``with`` statement.
+    """
+    fake_module = MagicMock()
+    fake_module.launch = launch_mock
+    return patch.dict("sys.modules", {"cloakbrowser": fake_module})
+
+
 # --- Beta baseline reference (from tmp/beta_trends_parsing.py main() + launch) ---
 # The validated working launch kwargs are MINIMAL:
 #     launch_kwargs = {"headless": args.headless, "locale": ..., "timezone": ...}
@@ -86,7 +103,7 @@ def _run_execute(params: Dict[str, Any], keywords: List[str]) -> tuple:
         fake_browser.new_context.side_effect = new_context
         return fake_browser
 
-    with patch("cloakbrowser.launch", side_effect=fake_launch), \
+    with _patch_cloakbrowser_launch(fake_launch), \
          patch.object(BrowserScraper, "_apply_rate_limit"):
         result = scraper._execute_cloakbrowser_trends(keywords, params)
 
@@ -218,7 +235,7 @@ class TestTrendsWarmupUsesManualStartWait:
         fake_browser = MagicMock()
         fake_browser.new_context.return_value = fake_context
 
-        with patch("cloakbrowser.launch", return_value=fake_browser), \
+        with _patch_cloakbrowser_launch(MagicMock(return_value=fake_browser)), \
              patch.object(BrowserScraper, "_apply_rate_limit"), \
              patch.object(BrowserScraper, "_download_trends_csv",
                           return_value="День,kw: (UA)\n2025-01-01,50\n"):
@@ -251,7 +268,7 @@ class TestTrendsWarmupUsesManualStartWait:
         fake_browser = MagicMock()
         fake_browser.new_context.return_value = fake_context
 
-        with patch("cloakbrowser.launch", return_value=fake_browser), \
+        with _patch_cloakbrowser_launch(MagicMock(return_value=fake_browser)), \
              patch.object(BrowserScraper, "_apply_rate_limit"), \
              patch.object(BrowserScraper, "_download_trends_csv",
                           return_value="День,kw: (UA)\n2025-01-01,50\n"):
