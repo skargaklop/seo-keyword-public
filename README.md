@@ -13,7 +13,7 @@ Private Helpers: none.
 Key Semantic Blocks: none.
 Critical Flows: describe workflows -> document configuration -> record browser/Trends/cache/SEO math caveats.
 Verification: verification-plan.xml#V-09-DOCS, verification-plan.xml#V-12-DOCS-GRACE
-CHANGE_SUMMARY: Added English translation of the README; Russian original preserved as README_RU.md.
+CHANGE_SUMMARY: Added English translation of the README; Russian original preserved as README_RU.md. Refreshed browser-scraping/Trends-provider framing — browser scraping is the default provider for Google Trends and SERP, enabled by default.
 -->
 
 > **English version.** [Русская версия](README_RU.md)
@@ -25,7 +25,7 @@ A Streamlit application for collecting search semantics, pulling keyword ideas f
 ### Workflow modes
 
 - **SERP Analysis** — analyze the Google SERP for a set of keywords, including positions, PAA (People Also Ask), and Related Searches
-- **Google Trends** — analyze Google Trends with interest over time, related queries/topics, and regional data (standalone mode or as an optional stage)
+- **Google Trends** — analyze Google Trends with interest over time, related queries, and regional data (standalone mode or as an optional stage; related topics only via the SerpApi/DataForSEO providers)
 - **URL -> LLM -> Ads** — scrape a page, extract keywords via an LLM, then pull Google Ads metrics with keyword selection
 - **URL -> Ads ideas** — generate keyword ideas directly from a URL seed via Google Ads
 - **Keyword seed -> Ads ideas** — generate keyword ideas from a manual keyword list via Google Ads
@@ -34,7 +34,7 @@ A Streamlit application for collecting search semantics, pulling keyword ideas f
 
 ### Core capabilities
 
-- **SERP Analysis**: a multi-provider client with adapters for Serper, SerpApi, Brave, Zenserp, SearchApi.io, ScraperAPI, DataForSEO, and Serpstat
+- **SERP Analysis**: a multi-provider client with adapters for Serper, SerpApi, Brave, Zenserp, SearchApi.io, ScraperAPI, DataForSEO, Serpstat, Serpstack, ScaleSERP, and ValueSERP, plus a browser-based (`browser_cloakbrowser`) adapter that needs no API key
 - **Context-aware chaining**: selected keywords and results can be handed off to SERP, Ads, Trends, and SEO from URL and keyword-driven workflows
 - **Mathematical SEO**:
   - **BM25F scoring**: field-weighted BM25F analysis with configurable field weights (title, H1, snippet, body, anchor text)
@@ -53,10 +53,10 @@ A Streamlit application for collecting search semantics, pulling keyword ideas f
 - **Google Trends integration**:
   - A standalone workflow mode for Google Trends analysis
   - An optional stage after any keyword-producing workflow step
-  - Interest over time, related queries, related topics, and regional data
+  - Interest over time, related queries, and regional data (related topics only via the SerpApi/DataForSEO providers; the default browser provider does not support them)
   - Relative 0-100 values with optional anchor rescaling
   - Rate limiting and caching to avoid 429 errors
-- **OPT-IN browser scraping**: an optional browser-based fallback for Google Trends and SERP (requires extra dependencies)
+- **OPT-IN browser scraping**: the default provider for Google Trends and SERP is browser-based scraping via Cloakbrowser (enabled by default); API providers are an opt-in alternative when an API key is available
 - **Export**: Excel with styling for URL matches, CSV with metadata, including BM25F/signal/Trends/cache metadata
 - **Merged report export**: a combined Excel report with Summary, SERP Analysis, Ads Data, and Math Analysis sheets. (Distinct from the per-keyword SERP↔Ads and Ads↔Trends column merges above, which widen a single Ads table rather than bundling separate sheets.)
 - **History**: checkpoint-based history with state restoration
@@ -104,6 +104,7 @@ A Streamlit application for collecting search semantics, pulling keyword ideas f
      - `OPENROUTER_API_KEY`
      - `CEREBRAS_API_KEY`
      - `ZAI_API_KEY`
+     - `MISTRAL_API_KEY`
    - If you need SERP results, fill in at least one SERP API key:
      - `SERPER_API_KEY` (Google via Serper)
      - `SERPAPI_KEY` (SerpApi)
@@ -113,6 +114,9 @@ A Streamlit application for collecting search semantics, pulling keyword ideas f
      - `SCRAPERAPI_KEY` (ScraperAPI)
      - `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD` (DataForSEO)
      - `SERPSTAT_TOKEN` (Serpstat)
+     - `SERPSTACK_KEY` (Serpstack)
+     - `SCALESERP_KEY` (ScaleSERP)
+     - `VALUESERP_KEY` (ValueSERP)
    - If you need Google Ads metrics, fill in:
      - `GOOGLE_ADS_DEVELOPER_TOKEN`
      - `GOOGLE_ADS_CUSTOMER_ID`
@@ -132,8 +136,8 @@ To use the browser-based scraping fallback for Google Trends and SERP:
   python -m pip install --user --upgrade cloakbrowser trafilatura
   ```
   The sidebar checks `cloakbrowser` and `trafilatura`. If a tool is missing or installed but does not expose the expected API, the workflow shows a status table and asks whether to use the project-environment install command or the global user Python command.
-- Set `scraper.browser_enabled: true` in `config/settings.yaml` or via the sidebar
-- Browser scraping is off by default and is not required for the base functionality
+- Set `scraper.browser_enabled: true` in `config/settings.yaml` or via the sidebar (this is the default)
+- Browser scraping is the default SERP and Trends provider; an API key is not required for base functionality
 
 ## Configuration
 
@@ -228,6 +232,8 @@ Each key maps to a provider in the `utils/serp_client.py` registry (`PROVIDER_RE
 | Variable | Description |
 |---|---|
 | `SCRAPEBADGER_KEY` | ScrapeBadger — a generic web-scrape fallback for Trends (sent as `x-api-key`) |
+| `SERPAPI_KEY` | SerpApi — commercial Trends provider `serpapi_trends` (also listed under SERP; supports related topics) |
+| `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` | DataForSEO — commercial Trends provider `dataforseo_trends` (also listed under SERP; supports related topics) |
 
 #### Behavior flags
 
@@ -541,7 +547,7 @@ Google Trends is available as a standalone workflow mode and as an optional stag
 1. Select **Google Trends** in the workflow selector
 2. Enter keywords manually or upload a file
 3. Configure the Trends parameters (geo, timeframe, category)
-4. Run the analysis to get interest over time, related queries/topics, and regional data
+4. Run the analysis to get interest over time, related queries, and regional data (related topics only via the SerpApi/DataForSEO providers)
 
 ### Optional stage
 After any keyword-producing workflow step (SERP related searches, Ads ideas, LLM extraction, crawl report):
@@ -554,6 +560,8 @@ After any keyword-producing workflow step (SERP related searches, Ads ideas, LLM
 - **Anchor rescaling**: an optional feature for cross-batch comparison; when disabled, results from independent batches should not be compared
 - **Rate limiting**: built-in rate limits and caching to avoid 429 errors
 - **Cache**: results are cached for 24 hours (configurable)
+- **Default provider mechanics**: the default `browser_scraper_trends` provider downloads Google Trends' CSV export via browser automation (Cloakbrowser) for the interest-over-time timeline, and recovers related queries and regional data by parsing the rendered Trends HTML when available. Related topics are not supported by this provider — use SerpApi or DataForSEO for topics.
+- **Confidence levels**: the default browser provider reports `MEDIUM` on full success, `LOW` when the CSV timeline is empty, `BLOCKED` on HTTP 429/captcha, and `DEGRADED` on partial multi-keyword failures. Toggle `google_trends.show_confidence_metadata` to surface these.
 
 ## BM25F and Leak-Inspired Signals
 
@@ -586,7 +594,7 @@ Deterministic text signals for SEO analysis:
 
 ## Browser Scraping (OPT-IN)
 
-Browser-based scraping is available as a fallback for Google Trends and SERP when an API is unavailable:
+Browser-based scraping is the default provider for Google Trends (`browser_scraper_trends`) and SERP (`browser_cloakbrowser`); an API-key provider is an optional alternative when an API is available:
 
 ### Installing dependencies
 ```bash
@@ -605,7 +613,7 @@ python -m pip install --user --upgrade cloakbrowser trafilatura
 - Configure the parser (trafilatura)
 
 ### Anti-bot handling
-- Browser engines (Cloakbrowser/Webwright) handle CAPTCHAs and basic anti-bot measures
+- Browser engine (Cloakbrowser) handles CAPTCHAs and basic anti-bot measures
 - Rate limiting with a configurable delay
 - Proxy support (optional)
 - Graceful degradation on CAPTCHA/rate limiting
