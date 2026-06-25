@@ -206,6 +206,7 @@ keywords:
   - ru
   - uk
   min_keyword_length: 3
+  restrict_to_input_keywords: false
 scraping:
   timeout_seconds: 30
   max_urls_per_batch: 20
@@ -233,7 +234,7 @@ google_ads:
   currency_code: UAH
   max_keywords_per_request: 1000
 serp:
-  provider: browser_cloakbrowser
+  provider: serper_dev
   num_results: 10
   gl: ua
   hl: uk

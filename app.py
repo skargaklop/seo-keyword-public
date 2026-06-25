@@ -38,6 +38,7 @@ from components.results import (
     render_serp_math_report,
     render_serp_related_searches,
     render_serp_results,
+    _scroll_to_top_markup,
 )
 from components.sidebar import render_sidebar
 from config.i18n import t
@@ -476,6 +477,8 @@ div[data-testid="stTabs"] button[aria-selected="true"] {
 """
     css = css.replace("__UPLOAD_BTN_TEXT__", upload_btn_text)
     st.markdown(css, unsafe_allow_html=True)
+    # Floating scroll-to-top button for long result pages (injected once per rerun).
+    st.html(_scroll_to_top_markup(t("scroll_to_top_label")), unsafe_allow_javascript=True)
 
 
 # Per-workflow stage labels: stage 4 (export) is shared, stages 1-3 adapt to the route.
@@ -1169,6 +1172,9 @@ def main() -> None:
                     currency_code=currency_code,
                     run_id=run_id,
                     force_refresh=force_refresh,
+                    restrict_to_input=bool(
+                        settings.get("restrict_to_input_keywords", False)
+                    ),
                 )
         elif selected_mode == WORKFLOW_MODE_KEYWORD_LLM:
             if not normalized_inputs:
@@ -1224,10 +1230,10 @@ def main() -> None:
                 st.warning(t("enter_url_warning"))
             elif selected_mode == WORKFLOW_MODE_URL_LLM:
                 staged_keywords = run_llm_url_keyword_extraction_tupled(
-                    normalized_inputs,
-                    provider,
-                    model_name,
-                    max_keywords,
+                    urls=normalized_inputs,
+                    provider=provider,
+                    model=model_name,
+                    max_keywords=max_keywords,
                     keyword_prompt=keyword_prompt,
                     api_timeout=api_timeout,
                     api_delay=api_delay,

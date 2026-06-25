@@ -1,16 +1,16 @@
 # MODULE_CONTRACT: utils/seo_math_analysis
 # Purpose: Pure deterministic mathematical SEO analysis engine with memoization and no external ML dependencies
 # Rationale: Provides n-gram ranking, TF-IDF scoring, BM25F field-weighted scoring, co-occurrence analysis, intent detection, and content gap analysis for SERP results and generated SEO text
-# Dependencies: functools, re, typing, collections, dataclasses, math
-# Exports: TextSource, NgramScore, TfidfTermScore, CooccurrenceTermScore, IntentSignal, ContentGapResult, ElementQualityScore, BM25FScore, FieldWeightedProfile, FieldStats, DomainMetrics, extract_ngrams, compute_tfidf, compute_cooccurrence_terms, analyze_intent, analyze_content_gap, score_generated_text, compute_bm25f, build_field_weighted_profile, compute_domain_metrics
+# Dependencies: functools, re, typing, collections, dataclasses, math; OPTIONAL pymorphy3 (ru/uk lemmatization) and simplemma (Latin lemmatization) — both lazily imported inside factory functions, never required at startup and absent from requirements.txt
+# Exports: TextSource, NgramScore, TfidfTermScore, CooccurrenceTermScore, IntentSignal, ContentGapResult, ElementQualityScore, BM25FScore, FieldWeightedProfile, FieldStats, DomainMetrics, extract_ngrams, compute_tfidf, compute_cooccurrence_terms, analyze_intent, analyze_content_gap, score_generated_text, compute_bm25f, build_field_weighted_profile, compute_domain_metrics, lemmatize_token, LemmatizerDependencyStatus, check_lemmatizer_dependencies, build_lemmatizer_install_command, get_lemmatizer_problem_dependencies
 # LINKS: PLAN 08-02 Tasks 1-4, PLAN 10-02 Task 2, requirements.xml#MATH-08-01, requirements.xml#MATH-08-02, requirements.xml#MATH-08-03, requirements.xml#MATH-08-04, requirements.xml#MATH-10-01, requirements.xml#MATH-10-02, requirements.xml#GENQA-08-01, requirements.xml#GENQA-08-02
 # MODULE_MAP: utils/seo_math_analysis.py
-# Public Functions: extract_ngrams, compute_tfidf, compute_cooccurrence_terms, analyze_intent, analyze_content_gap, score_generated_text, compute_bm25f, build_field_weighted_profile, compute_domain_metrics
-# Private Helpers: _tokenize_text, _normalize_for_hashing, _build_cooccurrence_matrix, _compute_jaccard_similarity, _compute_cosine_similarity, _parse_generated_sections, _score_element, _calculate_keyword_density, _check_forbidden_phrases, _get_field_b_param, _compute_field_length_normalization, _compute_bm25f_idf
-# Key Semantic Blocks: block_math_tokenize_corpus, block_math_ngram_rank, block_math_tfidf_score, block_math_bm25f_scoring, block_math_cooccurrence_terms, block_math_generation_quality, block_math_cache_memoization
+# Public Functions: extract_ngrams, compute_tfidf, compute_cooccurrence_terms, analyze_intent, analyze_content_gap, score_generated_text, compute_bm25f, build_field_weighted_profile, compute_domain_metrics, lemmatize_token, check_lemmatizer_dependencies, build_lemmatizer_install_command, get_lemmatizer_problem_dependencies
+# Private Helpers: _tokenize_text, _normalize_for_hashing, _build_cooccurrence_matrix, _compute_jaccard_similarity, _compute_cosine_similarity, _parse_generated_sections, _score_element, _calculate_keyword_density, _check_forbidden_phrases, _get_field_b_param, _compute_field_length_normalization, _compute_bm25f_idf, _is_cyrillic, _get_pymorphy_ru, _get_pymorphy_uk, _get_simplemma
+# Key Semantic Blocks: block_math_tokenize_corpus, block_math_ngram_rank, block_math_tfidf_score, block_math_bm25f_scoring, block_math_cooccurrence_terms, block_math_generation_quality, block_math_cache_memoization, block_math_lemmatizer_dependency_check
 # Critical Flows: SERP results -> tokenization -> n-gram/TF-IDF/BM25F/cooccurrence analysis -> intent/gap scoring; Generated text -> parsing -> element-specific quality scoring with optional BM25F coverage
 # Verification: python -m py_compile, python -m ruff check ., python -m pytest -q
-# CHANGE_SUMMARY: Initial module with deterministic mathematical analysis; pure Python implementation with memoization; no external ML dependencies; Phase 10: added BM25F with BM25+ IDF smoothing (+1 term)
+# CHANGE_SUMMARY: Initial module with deterministic mathematical analysis; pure Python implementation with memoization; no external ML dependencies; Phase 10: added BM25F with BM25+ IDF smoothing (+1 term); Inverted _stem_matches so strip_suffixes=True is the BROAD mode (real lemmatization) and False is the STRICT mode (exact equality); replaced regex suffix hack with lazy pymorphy3/simplemma lemmatizer (optional deps, lazy-loaded, graceful identity fallback); added LemmatizerDependencyStatus + check_lemmatizer_dependencies/build_lemmatizer_install_command/get_lemmatizer_problem_dependencies for the UI dependency table under the lemmatization checkbox
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ import math
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 # Optional cache import (available in Phase 10)
@@ -26,6 +27,7 @@ try:
     import importlib.util
     CACHE_AVAILABLE = importlib.util.find_spec("utils.request_cache") is not None
 except ImportError:
+    import importlib.util  # type: ignore[no-redef]
     CACHE_AVAILABLE = False
 
 if TYPE_CHECKING:
@@ -50,11 +52,11 @@ def _normalize_for_hashing(corpus: List[TextSource]) -> tuple[tuple[str, str, fl
 
 
 # FUNCTION_CONTRACT: _tokenize_text
-# Purpose: Tokenize input text into normalized terms with stopword filtering and optional suffix stripping
+# Purpose: Tokenize input text into normalized terms with stopword filtering and optional real lemmatization
 # Input: text (str), strip_suffixes (bool), stopwords (Set[str])
 # Output: List[str]
-# Side Effects: (none)
-# Business Rules: Lowercases, strips HTML tags, preserves Cyrillic/Latin/digits/hyphens, filters stopwords, optionally strips RU/UK suffixes
+# Side Effects: When strip_suffixes=True, lazily constructs pymorphy3/simplemma lemmatizers (cached); never imports them at module top level
+# Business Rules: Lowercases, strips HTML tags, preserves Cyrillic/Latin/digits/hyphens, filters stopwords; when strip_suffixes=True each token is passed through lemmatize_token (real dictionary lemmatization), otherwise tokens are kept verbatim; degrades to no-lemmatization when the optional libs are absent
 # Failure Modes: never raises; returns empty list for empty/None input
 # LINKS: PLAN 08-02 Task 2
 def _tokenize_text(text: str, strip_suffixes: bool = False, stopwords: Optional[Set[str]] = None) -> List[str]:
@@ -75,7 +77,11 @@ def _tokenize_text(text: str, strip_suffixes: bool = False, stopwords: Optional[
     tokens = re.findall(r"[a-zа-яіїєґё0-9]+(?:-[a-zа-яіїєґё0-9]+)*", text)
 
     if strip_suffixes:
-        tokens = [_strip_ru_uk_suffix(token) for token in tokens]
+        # BROAD mode: collapse each token to its dictionary lemma via the real
+        # lemmatizer (pymorphy3 for Cyrillic, simplemma for Latin). When the
+        # optional libs are absent lemmatize_token returns the token unchanged,
+        # so this degrades gracefully to "no morphology collapsing".
+        tokens = [lemmatize_token(token) for token in tokens]
 
     # Filter stopwords and empty tokens
     return [t for t in tokens if t and t not in stopwords]
@@ -106,6 +112,218 @@ def _strip_ru_uk_suffix(token: str) -> str:
             return token[:-len(suffix)]
 
     return token
+
+
+# FUNCTION_CONTRACT: _is_cyrillic
+# Purpose: Detect whether a token contains any Cyrillic character (ru/uk/mk/bg/etc.)
+# Input: token (str)
+# Output: bool — True if any character lies in the Cyrillic Unicode block
+# Side Effects: (none)
+# Business Rules: Covers the contiguous Cyrillic range U+0400 "Ѐ" through U+04FF "ӿ"; a single Cyrillic char is enough to route the token to pymorphy3 rather than simplemma
+# Failure Modes: never raises; returns False for empty/None-like input
+# LINKS: PLAN 08-02 Task 2
+def _is_cyrillic(token: str) -> bool:
+    return any("Ѐ" <= ch <= "ӿ" for ch in token)
+
+
+# FUNCTION_CONTRACT: _get_pymorphy_ru
+# Purpose: Lazily build and cache a pymorphy3 MorphAnalyzer for Russian
+# Input: (none)
+# Output: Optional[pymorphy3.MorphAnalyzer] — the analyzer, or None if pymorphy3 is not importable / fails to construct
+# Side Effects: On first successful call imports pymorphy3 and constructs a ~15MB analyzer (cached via lru_cache so it happens at most once per process); never imports at module top level
+# Business Rules: Pure lazy factory; pymorphy3 is an OPTIONAL dependency and must be absent from requirements.txt; the Russian dict auto-installs with pymorphy3
+# Failure Modes: returns None on ImportError or ANY construction error; never raises
+# LINKS: PLAN 08-02 Task 2
+@functools.lru_cache(maxsize=1)
+def _get_pymorphy_ru():
+    try:
+        import pymorphy3
+        return pymorphy3.MorphAnalyzer()
+    except Exception:
+        return None
+
+
+# FUNCTION_CONTRACT: _get_pymorphy_uk
+# Purpose: Lazily build and cache a pymorphy3 MorphAnalyzer for Ukrainian
+# Input: (none)
+# Output: Optional[pymorphy3.MorphAnalyzer] — the analyzer, or None if pymorphy3 or the uk dict is not importable / fails to construct
+# Side Effects: On first successful call imports pymorphy3 and constructs the Ukrainian analyzer (cached); never imports at module top level
+# Business Rules: Pure lazy factory; pymorphy3 + pymorphy3-dicts-uk are OPTIONAL dependencies; the uk analyzer requires the separate uk dict package
+# Failure Modes: returns None on ImportError or ANY construction error; never raises
+# LINKS: PLAN 08-02 Task 2
+@functools.lru_cache(maxsize=1)
+def _get_pymorphy_uk():
+    try:
+        import pymorphy3
+        return pymorphy3.MorphAnalyzer(lang="uk")
+    except Exception:
+        return None
+
+
+# FUNCTION_CONTRACT: _get_simplemma
+# Purpose: Lazily build and cache a simplemma Lemmatizer for Latin/other languages
+# Input: (none)
+# Output: Optional[simplemma.Lemmatizer] — the lemmatizer, or None if simplemma is not importable / fails to construct
+# Side Effects: On first successful call imports simplemma and constructs the lemmatizer with a small dictionary cache (cached); never imports at module top level
+# Business Rules: Pure lazy factory; simplemma is an OPTIONAL dependency and must be absent from requirements.txt; constructed with DefaultStrategy + DefaultDictionaryFactory(cache_max_size=4)
+# Failure Modes: returns None on ImportError or ANY construction error; never raises
+# LINKS: PLAN 08-02 Task 2
+@functools.lru_cache(maxsize=1)
+def _get_simplemma():
+    try:
+        from simplemma import Lemmatizer
+        from simplemma.strategies import DefaultStrategy
+        from simplemma.strategies.dictionaries import DefaultDictionaryFactory
+        return Lemmatizer(lemmatization_strategy=DefaultStrategy(
+            dictionary_factory=DefaultDictionaryFactory(cache_max_size=4)))
+    except Exception:
+        return None
+
+
+# FUNCTION_CONTRACT: lemmatize_token
+# Purpose: Reduce a token to its dictionary lemma using real morphology, routing by script (Cyrillic -> pymorphy3 ru then uk; Latin/other -> simplemma en)
+# Input: token (str)
+# Output: str — the lowercased lemma, or the original token unchanged when no lemmatizer is available or any error occurs
+# Side Effects: Triggers lazy construction of the pymorphy3/simplemma singletons on first use (cached for the process); zero cost when the libs are absent
+# Business Rules: Cyrillic tokens try Russian pymorphy3 first, then Ukrainian if Russian yields no parse; Latin/other tokens use simplemma with lang="en"; result is lowercased; on ANY exception or when all lemmatizers are None/unavailable the original token is returned verbatim (graceful identity fallback)
+# Failure Modes: never raises; returns the input token unchanged when libs are missing or parsing fails
+# LINKS: PLAN 08-02 Task 2
+def lemmatize_token(token: str) -> str:
+    try:
+        if _is_cyrillic(token):
+            morph_ru = _get_pymorphy_ru()
+            if morph_ru is not None:
+                parses = morph_ru.parse(token)
+                if parses:
+                    return parses[0].normal_form.lower()
+            # Russian had no parse (OOV) or pymorphy3 is absent: try the uk dict.
+            morph_uk = _get_pymorphy_uk()
+            if morph_uk is not None:
+                parses = morph_uk.parse(token)
+                if parses:
+                    return parses[0].normal_form.lower()
+            return token.lower()
+        # Latin / other scripts -> simplemma.
+        lem = _get_simplemma()
+        if lem is not None:
+            return lem.lemmatize(token, lang="en").lower()
+        return token.lower()
+    except Exception:
+        return token
+
+
+# block_math_lemmatizer_dependency_check: Detect the optional lemmatizer packages so the
+# UI can mirror the browser-scraper dependency table. Pure detection only — never installs.
+# Semantic block: Reports per-package install status and builds the matching pip command.
+
+# CLASS_CONTRACT: LemmatizerDependencyStatus
+# Purpose: Represent installation status of the optional lemmatizer dependencies
+# Input: (none)
+# Output: Enum with available/missing/unknown/unusable values
+# Side Effects: (none)
+# Business Rules: Mirrors utils.browser_scraper.DependencyStatus by value string so the UI status-label map and tests interoperate; defined locally to avoid importing browser_scraper (keeps this module's import graph light)
+# Failure Modes: (none — plain enum)
+# LINKS: PLAN 08-02 Task 2
+class LemmatizerDependencyStatus(Enum):
+    AVAILABLE = "available"
+    MISSING = "missing"
+    UNKNOWN = "unknown"
+    UNUSABLE = "unusable"
+
+
+# Map PyPI package name -> importable module name. pymorphy3-dicts-uk ships the
+# underscored module pymorphy3_dicts_uk (the hyphenated form is not importable).
+LEMMATIZER_DEPENDENCY_PACKAGES: tuple[str, ...] = (
+    "pymorphy3",
+    "pymorphy3-dicts-uk",
+    "simplemma",
+)
+
+# PyPI name -> (import module name, required attribute tuple). Empty attrs means
+# presence is sufficient; the uk dict is a data-only package with no public API.
+_LEMMATIZER_DEPENDENCY_MODULES: Dict[str, tuple[str, tuple[str, ...]]] = {
+    "pymorphy3": ("pymorphy3", ("MorphAnalyzer",)),
+    "pymorphy3-dicts-uk": ("pymorphy3_dicts_uk", ()),
+    "simplemma": ("simplemma", ("Lemmatizer",)),
+}
+
+
+# FUNCTION_CONTRACT: _check_lemmatizer_dependency
+# Purpose: Check whether a single optional lemmatizer package is importable with its required API
+# Input: pypi_name (str) — the pip name, looked up in _LEMMATIZER_DEPENDENCY_MODULES
+# Output: LemmatizerDependencyStatus
+# Side Effects: (none) — uses importlib.util.find_spec for presence and importlib.import_module only when attribute validation is required
+# Business Rules: MISSING when find_spec returns None; AVAILABLE when present with all required attrs; UNUSABLE when present but missing a required attr or import fails; UNKNOWN on unexpected errors
+# Failure Modes: never raises; returns UNKNOWN on any unexpected exception
+# LINKS: PLAN 08-02 Task 2
+def _check_lemmatizer_dependency(pypi_name: str) -> LemmatizerDependencyStatus:
+    module_name, required_attrs = _LEMMATIZER_DEPENDENCY_MODULES.get(
+        pypi_name, (pypi_name.replace("-", "_"), ())
+    )
+    try:
+        spec = importlib.util.find_spec(module_name)
+        if spec is None:
+            return LemmatizerDependencyStatus.MISSING
+        if not required_attrs:
+            return LemmatizerDependencyStatus.AVAILABLE
+        module = importlib.import_module(module_name)
+        if all(hasattr(module, attr) for attr in required_attrs):
+            return LemmatizerDependencyStatus.AVAILABLE
+        return LemmatizerDependencyStatus.UNUSABLE
+    except ImportError:
+        return LemmatizerDependencyStatus.UNUSABLE
+    except Exception:
+        return LemmatizerDependencyStatus.UNKNOWN
+
+
+# FUNCTION_CONTRACT: check_lemmatizer_dependencies
+# Purpose: Report the install status of every optional lemmatizer package
+# Input: (none)
+# Output: Dict[str, LemmatizerDependencyStatus] keyed by IMPORT module name (pymorphy3, pymorphy3_dicts_uk, simplemma) so the UI can map to display labels
+# Side Effects: (none) — delegates to _check_lemmatizer_dependency
+# Business Rules: Iterates LEMMATIZER_DEPENDENCY_PACKAGES in fixed order; keys are import module names, not PyPI names (uk dict -> pymorphy3_dicts_uk)
+# Failure Modes: never raises; individual checks degrade to UNKNOWN
+# LINKS: PLAN 08-02 Task 2
+def check_lemmatizer_dependencies() -> Dict[str, LemmatizerDependencyStatus]:
+    result: Dict[str, LemmatizerDependencyStatus] = {}
+    for pypi_name in LEMMATIZER_DEPENDENCY_PACKAGES:
+        module_name = _LEMMATIZER_DEPENDENCY_MODULES[pypi_name][0]
+        result[module_name] = _check_lemmatizer_dependency(pypi_name)
+    return result
+
+
+# FUNCTION_CONTRACT: build_lemmatizer_install_command
+# Purpose: Build the pip install/upgrade command for the optional lemmatizer packages
+# Input: scope (str) — "project" (default) installs into the current interpreter; "global" targets the per-user site-packages
+# Output: str — the full python -m pip command
+# Side Effects: (none)
+# Business Rules: scope="global" adds the --user flag; packages joined in the canonical order pymorphy3 pymorphy3-dicts-uk simplemma; mirrors utils.browser_scraper.build_optional_dependency_install_command
+# Failure Modes: never raises
+# LINKS: PLAN 08-02 Task 2
+def build_lemmatizer_install_command(scope: str = "project") -> str:
+    packages = " ".join(LEMMATIZER_DEPENDENCY_PACKAGES)
+    if scope == "global":
+        return f"python -m pip install --user {packages}"
+    return f"python -m pip install {packages}"
+
+
+# FUNCTION_CONTRACT: get_lemmatizer_problem_dependencies
+# Purpose: Return the subset of lemmatizer packages that are not fully available (missing/unknown/unusable)
+# Input: dependencies (Optional[Dict[str, LemmatizerDependencyStatus]]) — when None, check_lemmatizer_dependencies() is called
+# Output: Dict[str, LemmatizerDependencyStatus] containing only non-AVAILABLE entries
+# Side Effects: When dependencies is None, runs a live detection pass (importlib probes)
+# Business Rules: AVAILABLE entries are filtered out so the UI only warns when user action is needed
+# Failure Modes: never raises; an empty dict means everything is installed and usable
+# LINKS: PLAN 08-02 Task 2
+def get_lemmatizer_problem_dependencies(
+    dependencies: Optional[Dict[str, LemmatizerDependencyStatus]] = None,
+) -> Dict[str, LemmatizerDependencyStatus]:
+    deps = dependencies if dependencies is not None else check_lemmatizer_dependencies()
+    return {
+        name: status
+        for name, status in deps.items()
+        if status != LemmatizerDependencyStatus.AVAILABLE
+    }
 
 
 # FUNCTION_CONTRACT: _get_default_stopwords
@@ -1047,24 +1265,37 @@ def analyze_intent(
                 mark_signal("navigational", f"nav:{signal}", weight)
 
         cyrillic_tokens = {token for token in token_set if re.search("[\u0430-\u044f\u0456\u0457\u0454\u0491]", token)}
+        # Intent morphology toggle (INVERTED from naive intuition):
+        #  - strip_suffixes=True  (ENABLED)  = BROAD/permissive: lemmatize the token
+        #    then prefix-match the lemma, so inflected forms collapse onto a stem
+        #    (\u043a\u0443\u043f\u0438\u0442\u044c = \u043a\u0443\u043f\u0438\u043b = \u043a\u0443\u043f\u043b\u044e -> all match stem "\u043a\u0443\u043f"). When enabled the token
+        #    is already lemmatized by _tokenize_text, so lemmatize_token is idempotent
+        #    here; calling it again keeps the matcher self-contained.
+        #  - strip_suffixes=False (DISABLED) = STRICT: exact equality token == stem,
+        #    no morphology collapsing at all (\u043a\u0443\u043f\u0438\u0442\u044c != \u043a\u0443\u043f).
+        def _stem_matches(token: str, stem: str) -> bool:
+            if strip_suffixes:
+                lemma_form = lemmatize_token(token)
+                return lemma_form.startswith(stem) or stem.startswith(lemma_form)
+            return token == stem
         for token in cyrillic_tokens:
             for stem in informational_stems:
-                if token.startswith(stem) or stem.startswith(token):
+                if _stem_matches(token, stem):
                     mark_signal("informational", stem, 0.95)
                     break
 
             for stem in commercial_stems:
-                if token.startswith(stem) or stem.startswith(token):
+                if _stem_matches(token, stem):
                     mark_signal("commercial", stem, 0.9)
                     break
 
             for stem in transactional_stems:
-                if token.startswith(stem) or stem.startswith(token):
+                if _stem_matches(token, stem):
                     mark_signal("transactional", stem, 1.05)
                     break
 
             for stem in navigational_stems:
-                if token.startswith(stem) or stem.startswith(token):
+                if _stem_matches(token, stem):
                     mark_signal("navigational", f"nav:{stem}", 1.2)
                     break
 

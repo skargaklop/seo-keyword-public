@@ -10,26 +10,26 @@
 # Key Semantic Blocks: block_results_display_data_table, block_results_selection_checkboxes, block_results_ideas_planner, block_results_seo_generation, block_results_history_entries, block_results_keyword_handoff_select, block_results_bidirectional_chain, block_results_trends_stage_integration, block_results_math_report_render, block_results_crawl_report_render, block_results_regenerate_quality_feedback, block_results_post_ads_serp_handoff, block_results_gen_text_math_report
 # Critical Flows: pipeline execution -> results display -> keyword selection -> ideas generation -> SEO generation/Trends/SERP/Ads -> generated text math analysis -> history save; SERP/crawl results -> math profile -> math report rendering; generated text -> quality scoring -> quality report
 # Verification: python -m py_compile, python -m ruff check ., python -m pytest -q
-# CHANGE_SUMMARY: Restored top-of-file module contract metadata; added reusable keyword candidate selector and bidirectional chain buttons for staged workflows; Phase 8 Task 6: added SERP math report rendering; Phase 8 Task 7: added generation quality report rendering; Phase 8 Plan 03: added crawl math report rendering and keyword handoff controls; Phase 10 Task 9: added Trends-as-stage buttons after keyword-producing steps.
+# CHANGE_SUMMARY: Restored top-of-file module contract metadata; added reusable keyword candidate selector and bidirectional chain buttons for staged workflows; Phase 8 Task 6: added SERP math report rendering; Phase 8 Task 7: added generation quality report rendering; Phase 8 Plan 03: added crawl math report rendering and keyword handoff controls; Phase 10 Task 9: added Trends-as-stage buttons after keyword-producing steps; Bug fix: updated FUNCTION_CONTRACT for _scroll_to_top_markup to reference st.html() instead of st.markdown (script execution in st.html enables the scroll-to-top button to appear); Bug fix: inject markup via st.html(..., unsafe_allow_javascript=True) so the scroll-to-top script executes and the button becomes visible; Bug fix: target Streamlit 1.58's real scroll container (section[data-testid="stMain"]) for both the visibility poll and the click handler — the 1s fallback previously queried .main/stAppViewContainer (not scrollable) and flickered .is-visible off; bind the click via addEventListener (st.html strips inline onclick), so clicking the button actually scrolls to the top.
 
-import io
 import hashlib
+import io
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
-from streamlit_shadcn_ui import metric_card
-from config.i18n import t, TRANSLATIONS
+from config.i18n import TRANSLATIONS, t
 from config.settings import LLM_CONFIG
+from streamlit_shadcn_ui import metric_card
 from utils.excel_exporter import ExcelExporter
 from utils.google_ads_client import GoogleAdsHandler
 from utils.history import HistoryManager
 from utils.llm_handler import LLMHandler
 from utils.logger import logger
-from utils.seo_math_analysis import DomainMetrics
 from utils.pipeline import (
     KEYWORD_SEED_SOURCE_URL,
     SERP_RELATED_COLUMNS,
@@ -46,6 +46,7 @@ from utils.pipeline import (
 from utils.pipeline import (
     get_selected_keyword_candidates as _pipeline_get_selected_keyword_candidates,
 )
+from utils.seo_math_analysis import DomainMetrics
 
 _BASE_DIR = Path(__file__).parent.parent
 _BM25F_DISPLAY_COLUMN_KEYS = {
@@ -659,6 +660,182 @@ def _get_use_url_seed_flags(urls: List[str]) -> Dict[str, bool]:
         flags[url] = bool(st.session_state.get(session_key, False))
     st.session_state.keyword_ideas_use_url_seed = flags
     return flags
+# FUNCTION_CONTRACT: _scroll_to_top_markup
+# Purpose: Produce the HTML/CSS/JS markup for a fixed floating scroll-to-top button.
+# Input: label (str) — localized text used for the button's aria-label and title.
+# Output: str — a single HTML snippet to render via st.html(..., unsafe_allow_javascript=True) so the inline script executes.
+# Side Effects: None (pure); the returned markup resolves Streamlit's real scroll container
+#               (section[data-testid="stMain"] in 1.58), attaches a scroll listener to it,
+#               and binds a smooth-scroll-to-top click handler — all from the inline script
+#               (st.html strips inline onclick attributes, so the click is bound via
+#               addEventListener inside the script).
+# Business Rules: Stays inside the existing .console-* CSS namespace and reuses the
+#                 --console-blue accent; button appears only after the user scrolls past
+#                 300px and STAYS visible (the poll reads the same container as the listener,
+#                 so it cannot flicker it off); no external assets or new dependencies.
+# Failure Modes: None — static string generation.
+# LINKS: PLAN scroll-to-top button
+def _scroll_to_top_markup(label: str) -> str:
+    safe_label = str(label)
+    return f"""
+<style>
+.console-scrolltop {{
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: none;
+  border-radius: 9999px;
+  background: var(--console-blue, #1d4ed8);
+  color: #ffffff;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  transform: translateY(0.5rem);
+}}
+.console-scrolltop.is-visible {{
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}}
+.console-scrolltop:hover {{
+  background: var(--console-blue, #1d4ed8);
+  filter: brightness(1.08);
+}}
+</style>
+<button
+  id="consoleScrollTop"
+  class="console-scrolltop"
+  type="button"
+  aria-label="{safe_label}"
+  title="{safe_label}"
+  data-action="scroll-to-top">&#8593;</button>
+<script>
+(function () {{
+  if (window.__consoleScrollTopBound) return;
+  window.__consoleScrollTopBound = true;
+
+  // Resolve the ONE scroll container once. In Streamlit 1.58 the real scrollable element
+  // is section[data-testid="stMain"] (.main no longer exists; stAppViewContainer is not
+  // scrollable). We attach a direct scroll listener to it AND read its scrollTop in the
+  // poll, so the click handler and the visibility check always agree on the same element.
+  function resolveScrollTarget() {{
+    var stMain = document.querySelector('section[data-testid="stMain"]');
+    if (stMain) return stMain;
+    var legacy = document.querySelector('.main') || document.querySelector('[data-testid="stAppViewContainer"]');
+    if (legacy && legacy.scrollHeight > legacy.clientHeight) return legacy;
+    return null;
+  }}
+
+  window.__consoleScrollToTop = function() {{
+    var target = resolveScrollTarget();
+    if (target) {{
+      target.scrollTo({{top:0, behavior:'smooth'}});
+    }} else {{
+      window.scrollTo({{top:0, behavior:'smooth'}});
+    }}
+  }};
+
+  function currentScrollTop() {{
+    var target = resolveScrollTarget();
+    if (target) return target.scrollTop;
+    return window.scrollY || document.documentElement.scrollTop || 0;
+  }}
+
+  function syncConsoleScrollTop() {{
+    var btn = document.getElementById('consoleScrollTop');
+    if (!btn) return;
+
+    // Fallback: an unattached scrollable child (older Streamlit / dynamic content) may be
+    // the event target. Only used when the resolved container reports 0.
+    var scrollTop = currentScrollTop();
+
+    if (scrollTop > 300) {{
+      btn.classList.add('is-visible');
+    }} else {{
+      btn.classList.remove('is-visible');
+    }}
+  }}
+
+  // Listen for scrolls on the real container directly (scroll events do not bubble).
+  function attachContainerListener() {{
+    var target = resolveScrollTarget();
+    if (target && !target.__consoleScrollTopBound) {{
+      target.__consoleScrollTopBound = true;
+      target.addEventListener('scroll', syncConsoleScrollTop, {{ passive: true }});
+    }}
+  }}
+
+  // Capture-phase listeners catch scroll from any unattached scrollable element as a safety net.
+  window.addEventListener('scroll', syncConsoleScrollTop, {{ capture: true, passive: true }});
+  document.addEventListener('scroll', syncConsoleScrollTop, {{ capture: true, passive: true }});
+
+  // Bind the click handler from the script (st.html strips inline onclick attributes, so we
+  // cannot rely on onclick="..." surviving sanitization — addEventListener does).
+  function bindClick() {{
+    var btn = document.getElementById('consoleScrollTop');
+    if (btn && !btn.__consoleScrollTopClickBound) {{
+      btn.__consoleScrollTopClickBound = true;
+      btn.addEventListener('click', function () {{
+        window.__consoleScrollToTop();
+      }});
+    }}
+  }}
+
+  // Periodic re-check: re-resolves the container (Streamlit may inject stMain late) and
+  // syncs visibility. Because it reads the SAME container as the listener, it cannot fight
+  // it (the old flicker bug).
+  setInterval(function () {{ attachContainerListener(); bindClick(); syncConsoleScrollTop(); }}, 1000);
+
+  attachContainerListener();
+  bindClick();
+  syncConsoleScrollTop();
+}})();
+</script>
+"""
+
+# FUNCTION_CONTRACT: build_export_filename_suffix
+# Purpose: Build the filename infix that encodes the run's first processed query/URL.
+# Input: inputs (List[str]) — the normalized active inputs for the run
+#        (e.g. st.session_state["active_inputs"]). May be None or empty.
+# Output: str — "" when there is nothing to encode, otherwise "_<slug>" for a single
+#         input or "_<slug>_plus_<N-1>" when several inputs were processed.
+# Side Effects: None (pure).
+# Business Rules: snake_case slug; keeps unicode word characters (Cyrillic); strips a
+#                 leading http(s):// scheme; truncated to 40 chars to stay within the
+#                 Windows 260-char path ceiling; "plus" is a literal ASCII token because
+#                 filenames are filesystem identifiers, not localized UI.
+# Failure Modes: Returns "" when the input slugifies to nothing.
+# LINKS: PLAN input-aware export filenames
+def build_export_filename_suffix(inputs: Optional[List[str]]) -> str:
+    if not inputs:
+        return ""
+    first = str(inputs[0]).strip()
+    if not first:
+        return ""
+    # Drop the URL scheme so it reads as a path, not a protocol token.
+    first = re.sub(r"^https?://", "", first, flags=re.IGNORECASE)
+    # Collapse any run of non-word chars (incl. / . : ? & = -) to a single underscore.
+    slug = re.sub(r"[^\w]+", "_", first).strip("_").lower()
+    if not slug:
+        return ""
+    if len(slug) > 40:
+        slug = slug[:40].rstrip("_")
+        if not slug:
+            return ""
+    if len(inputs) > 1:
+        slug = f"{slug}_plus_{len(inputs) - 1}"
+    return f"_{slug}"
+
 # FUNCTION_CONTRACT: _render_table_preview_with_exports
 # Purpose: Reusable helper for full-width table preview with export buttons below
 # Input: df (pd.DataFrame), display_df (pd.DataFrame), auto_save_excel (bool), save_key (str), excel_filename_prefix (str)
@@ -676,10 +853,12 @@ def _render_table_preview_with_exports(
     csv_download_key: str = "",
 ) -> None:
     """Render full-width table preview with export buttons below (Phase 9 layout)."""
+    # Input-aware infix: encodes the run's first query/URL in every filename. "" when none.
+    filename_suffix = build_export_filename_suffix(st.session_state.get("active_inputs") or [])
     with st.container():
         if auto_save_excel and not st.session_state.get(save_key, False):
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            filename = f"{excel_filename_prefix}_{timestamp}.xlsx"
+            filename = f"{excel_filename_prefix}{filename_suffix}_{timestamp}.xlsx"
             output_path = _BASE_DIR / "outputs" / filename
             output_path.parent.mkdir(exist_ok=True)
 
@@ -697,7 +876,7 @@ def _render_table_preview_with_exports(
                 st.download_button(
                     label=t("download_excel"),
                     data=buffer.getvalue(),
-                    file_name=f"{excel_filename_prefix}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx",
+                    file_name=f"{excel_filename_prefix}{filename_suffix}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:
@@ -708,7 +887,7 @@ def _render_table_preview_with_exports(
                 st.download_button(
                     label=t("download_csv"),
                     data=csv_data,
-                    file_name=f"{excel_filename_prefix}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv",
+                    file_name=f"{excel_filename_prefix}{filename_suffix}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv",
                     mime="text/csv",
                     key=csv_download_key or f"download_{excel_filename_prefix}_csv",
                 )
@@ -1973,9 +2152,10 @@ def render_serp_results(auto_save_excel: bool) -> None:
 
     # Export buttons below table (one row: Excel left, CSV right)
     with st.container():
+        filename_suffix = build_export_filename_suffix(st.session_state.get("active_inputs") or [])
         if auto_save_excel and not st.session_state.get("serp_results_saved", False):
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            filename = f"serp_results_export_{timestamp}.xlsx"
+            filename = f"serp_results_export{filename_suffix}_{timestamp}.xlsx"
             output_path = _BASE_DIR / "outputs" / filename
             output_path.parent.mkdir(exist_ok=True)
 
@@ -1993,7 +2173,7 @@ def render_serp_results(auto_save_excel: bool) -> None:
                 st.download_button(
                     label=t("download_excel"),
                     data=buffer.getvalue(),
-                    file_name=f"serp_results_export_{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx",
+                    file_name=f"serp_results_export{filename_suffix}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:
@@ -2004,7 +2184,7 @@ def render_serp_results(auto_save_excel: bool) -> None:
                 st.download_button(
                     label=t("download_csv"),
                     data=csv_data,
-                    file_name=f"serp_results_export_{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv",
+                    file_name=f"serp_results_export{filename_suffix}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv",
                     mime="text/csv",
                     key="download_serp_results_csv",
                 )
@@ -2100,6 +2280,7 @@ def render_serp_related_searches() -> None:
                 )
 
     # Export buttons below the expanders
+    filename_suffix = build_export_filename_suffix(st.session_state.get("active_inputs") or [])
     exp_col1, exp_col2 = st.columns(2)
     with exp_col1:
         try:
@@ -2108,7 +2289,7 @@ def render_serp_related_searches() -> None:
             st.download_button(
                 label=t("serp_export_related"),
                 data=buffer.getvalue(),
-                file_name=f"serp_related_export_{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx",
+                file_name=f"serp_related_export{filename_suffix}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="download_serp_related_xlsx",
             )
@@ -2120,7 +2301,7 @@ def render_serp_related_searches() -> None:
             st.download_button(
                 label=t("serp_export_related_csv"),
                 data=csv_data,
-                file_name=f"serp_related_export_{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv",
+                file_name=f"serp_related_export{filename_suffix}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv",
                 mime="text/csv",
                 key="download_serp_related_csv",
             )
@@ -3390,6 +3571,7 @@ def _render_math_analysis_export_button(
             trends_metadata=trends_metadata,
         )
         timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        filename_suffix = build_export_filename_suffix(st.session_state.get("active_inputs") or [])
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
             try:
@@ -3399,7 +3581,7 @@ def _render_math_analysis_export_button(
                 st.download_button(
                     label=t("export_math_analysis"),
                     data=buffer.getvalue(),
-                    file_name=f"{file_prefix}_{timestamp}.xlsx",
+                    file_name=f"{file_prefix}{filename_suffix}_{timestamp}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key=f"download_{file_prefix}_xlsx",
                 )
@@ -3422,7 +3604,7 @@ def _render_math_analysis_export_button(
                     st.download_button(
                         label=t("download_csv"),
                         data=ExcelExporter.export_csv_to_bytes(csv_df),
-                        file_name=f"{file_prefix}_{timestamp}.csv",
+                        file_name=f"{file_prefix}{filename_suffix}_{timestamp}.csv",
                         mime="text/csv",
                         key=f"download_{file_prefix}_csv",
                     )
@@ -3469,6 +3651,7 @@ def render_serp_domain_metrics() -> None:
         try:
             domain_df = pd.DataFrame(rows)
             timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+            filename_suffix = build_export_filename_suffix(st.session_state.get("active_inputs") or [])
             sheet_name = t("serp_domain_export_sheet") if t("serp_domain_export_sheet") else "SERP Domains"
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
@@ -3477,7 +3660,7 @@ def render_serp_domain_metrics() -> None:
                     st.download_button(
                         label=t("download_excel"),
                         data=export_buffer.getvalue(),
-                        file_name=f"serp_domains_export_{timestamp}.xlsx",
+                        file_name=f"serp_domains_export{filename_suffix}_{timestamp}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key="download_serp_domain_metrics_excel",
                     )
@@ -3486,7 +3669,7 @@ def render_serp_domain_metrics() -> None:
                 st.download_button(
                     label=t("download_csv"),
                     data=csv_buffer,
-                    file_name=f"serp_domains_export_{timestamp}.csv",
+                    file_name=f"serp_domains_export{filename_suffix}_{timestamp}.csv",
                     mime="text/csv",
                     key="download_serp_domain_metrics_csv",
                 )
@@ -3938,6 +4121,7 @@ def _render_google_trends_export_button(
             ),
         }
         # Export buttons (one row: Excel left, CSV right)
+        filename_suffix = build_export_filename_suffix(st.session_state.get("active_inputs") or [])
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
             try:
@@ -3947,7 +4131,7 @@ def _render_google_trends_export_button(
                 st.download_button(
                     label=t("export_math_analysis"),
                     data=buffer.getvalue(),
-                    file_name=f"google_trends_export_{timestamp}.xlsx",
+                    file_name=f"google_trends_export{filename_suffix}_{timestamp}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="download_google_trends_export_xlsx",
                 )
@@ -3968,7 +4152,7 @@ def _render_google_trends_export_button(
                     st.download_button(
                         label=t("download_csv"),
                         data=ExcelExporter.export_csv_to_bytes(csv_df),
-                        file_name=f"google_trends_export_{timestamp}.csv",
+                        file_name=f"google_trends_export{filename_suffix}_{timestamp}.csv",
                         mime="text/csv",
                         key="download_google_trends_export_csv",
                     )

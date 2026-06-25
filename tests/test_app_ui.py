@@ -283,6 +283,114 @@ def test_main_allows_same_submission_again_after_non_submit_rerun(
     assert len(calls) == 2
 
 
+def _stub_tupled_extraction_with_real_signature(calls):
+    """Mirror the real signature of run_llm_url_keyword_extraction_tupled.
+
+    Production signature is (urls, **workflow_kwargs): exactly one positional
+    parameter. Using the real signature (not a permissive ``lambda *args``)
+    means a caller that passes provider/model/max_keywords positionally raises
+    TypeError exactly as it does in the running app — which is the regression
+    this test guards against. Recording the call lets us also assert the
+    arguments were forwarded by keyword.
+    """
+
+    def _stub(urls, **workflow_kwargs):
+        calls.append({"args": (urls,), "kwargs": workflow_kwargs})
+        return []
+
+    return _stub
+
+
+def test_main_primary_url_llm_workflow_calls_extraction_by_keyword(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: URL→LLM primary workflow must call extraction with keyword args.
+
+    Previously app.main() called run_llm_url_keyword_extraction_tupled with four
+    POSITIONAL arguments (urls, provider, model, max_keywords) on the primary
+    (non-SERP-pre-step) URL_LLM path, but the function accepts only one positional
+    parameter — raising "takes 1 positional argument but 4 were given". This test
+    drives that exact path with enable_serp_pre_step=False (the default) and a
+    signature-faithful stub, so the regression would raise TypeError and fail.
+    """
+    st.session_state.clear()
+    calls: list = []
+
+    monkeypatch.setattr(
+        "app.render_sidebar",
+        lambda: {
+            "provider": "OpenAI",
+            "model_name": "gpt-test",
+            "max_keywords": 10,
+            "location_id": "2840",
+            "language_id": "1000",
+            "currency_code": "USD",
+            "auto_save_excel": False,
+            "keyword_prompt": "",
+            "seo_prompt": "",
+            "api_timeout": 10,
+            "api_delay": 2,
+            "api_retry_count": 4,
+            "api_retry_delay": 4,
+            "upload_max_file_size_mb": 5,
+            "upload_max_rows": 1000,
+        },
+    )
+    # WORKFLOW_MODE_URL_LLM with SERP pre-step OFF → hits the primary-workflow
+    # call site (call@1232), not the SERP-pre-step call site.
+    monkeypatch.setattr(
+        "app._render_input_form",
+        lambda: (
+            app.WORKFLOW_MODE_URL_LLM,
+            "https://example.com",
+            None,
+            True,
+        ),
+    )
+    monkeypatch.setattr("app.run_startup_cleanup", lambda: {})
+    monkeypatch.setattr("app.validate_api_keys", lambda: {"openai": True})
+    monkeypatch.setattr("app.logger.close_handlers", lambda: None)
+    monkeypatch.setattr("app.logger.refresh_config", lambda: None)
+    monkeypatch.setattr("app.logger.info", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.st.title", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.st.markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.st.html", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.st.warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.st.error", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.st.info", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.st.button", lambda *args, **kwargs: False)
+    monkeypatch.setattr("app.render_keyword_results", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.render_scraping_preview", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.render_keyword_selection", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.render_keyword_ideas_generation", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr("app.render_seo_generation", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.render_seo_results", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.render_history", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.render_keyword_candidate_selector_with_sources",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.run_llm_url_keyword_extraction_tupled",
+        _stub_tupled_extraction_with_real_signature(calls),
+    )
+
+    # Must not raise TypeError. With the bug present, this raised
+    # "takes 1 positional argument but 4 were given".
+    app.main()
+
+    assert len(calls) == 1, "primary URL_LLM workflow must invoke extraction once"
+    forwarded = calls[0]
+    # Positional args must contain only the urls list — provider/model/etc.
+    # must arrive as keyword arguments.
+    assert forwarded["args"] == (["https://example.com"],)
+    assert forwarded["kwargs"]["provider"] == "OpenAI"
+    assert forwarded["kwargs"]["model"] == "gpt-test"
+    assert forwarded["kwargs"]["max_keywords"] == 10
+
+
 def test_main_routes_google_trends_mode_to_trends_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2039,7 +2147,7 @@ class TestBuildGeneratedTextMathProfile:
         from utils.pipeline import build_generated_text_math_profile
         monkeypatch.setattr("utils.pipeline.SEO_MATH_CONFIG", {
             "enabled": True, "analyze_generated_text": True,
-            "strip_suffixes": False, "ngram_min": 1, "ngram_max": 2,
+            "strip_suffixes": True, "ngram_min": 1, "ngram_max": 2,
             "top_terms_limit": 30, "min_ngram_count": 1, "min_document_frequency": 1,
             "analyze_ngrams": False, "analyze_tfidf": True,
             "analyze_cooccurrence": False, "analyze_intent": True, "analyze_bm25f": False,

@@ -52,6 +52,12 @@ from utils.browser_scraper import (
     build_optional_dependency_install_command,
     get_problem_dependencies,
 )
+from utils.seo_math_analysis import (
+    LemmatizerDependencyStatus,
+    build_lemmatizer_install_command,
+    check_lemmatizer_dependencies,
+    get_lemmatizer_problem_dependencies,
+)
 from utils.model_fetcher import (
     fetch_all_models,
     get_cached_models,
@@ -256,6 +262,11 @@ def _build_sidebar_config_updates(
     google_ads_config["location_id"] = values["location_id"]
     google_ads_config["language_id"] = values["language_id"]
     google_ads_config["currency_code"] = values["currency_code"]
+
+    keywords_config = current_config.setdefault("keywords", {})
+    keywords_config["restrict_to_input_keywords"] = bool(
+        values.get("restrict_to_input_keywords", False)
+    )
 
     serp_config = current_config.setdefault("serp", {})
     serp_config["provider"] = values.get("serp_provider", "serper_dev")
@@ -605,6 +616,7 @@ def render_sidebar() -> Dict[str, Any]:
         current_logging_config = current_config.get("logging", {})
         current_history_config = current_config.get("history", {})
         current_google_ads_config = current_config.get("google_ads", {})
+        current_keywords_config = current_config.get("keywords", {})
         current_uploads_config = current_config.get("uploads", {})
         current_serp_config = current_config.get("serp", {})
         current_prompts = current_llm_config.get("prompts", {})
@@ -1133,6 +1145,53 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_strip_suffixes_checkbox",
                     help=t("seo_math_strip_suffixes_help"),
                 )
+                if seo_math_strip_suffixes:
+                    # Mirror the browser-scraper dependency table: show per-package
+                    # install status, warn when any are missing, and surface the pip
+                    # command. Same shape as the cloakbrowser/playwright block below.
+                    lemmatizer_statuses = check_lemmatizer_dependencies()
+                    lemmatizer_status_labels = {
+                        LemmatizerDependencyStatus.AVAILABLE: t("scraper_dependency_status_available"),
+                        LemmatizerDependencyStatus.MISSING: t("scraper_dependency_status_missing"),
+                        LemmatizerDependencyStatus.UNKNOWN: t("scraper_dependency_status_unknown"),
+                        LemmatizerDependencyStatus.UNUSABLE: t("scraper_dependency_status_unusable"),
+                    }
+                    lemmatizer_name_labels = {
+                        "pymorphy3": t("lemmatizer_dependency_name_pymorphy3"),
+                        "pymorphy3_dicts_uk": t("lemmatizer_dependency_name_pymorphy3_dicts_uk"),
+                        "simplemma": t("lemmatizer_dependency_name_simplemma"),
+                    }
+                    st.caption(t("lemmatizer_dependency_status_header"))
+                    st.table(
+                        [
+                            {
+                                t("scraper_dependency_name_col"): lemmatizer_name_labels.get(name, name),
+                                t("scraper_dependency_status_col"): lemmatizer_status_labels.get(status, status.value),
+                            }
+                            for name, status in lemmatizer_statuses.items()
+                        ]
+                    )
+                    lemmatizer_problems = get_lemmatizer_problem_dependencies(lemmatizer_statuses)
+                    if lemmatizer_problems:
+                        st.warning(t("lemmatizer_dependencies_missing_prompt"))
+                        lemmatizer_install_scope = st.radio(
+                            t("lemmatizer_install_scope_label"),
+                            options=["project", "global"],
+                            format_func=lambda value: (
+                                t("lemmatizer_install_scope_project")
+                                if value == "project"
+                                else t("lemmatizer_install_scope_global")
+                            ),
+                            horizontal=True,
+                            key="lemmatizer_install_scope_radio",
+                        )
+                        st.caption(t("lemmatizer_install_command_label"))
+                        st.code(
+                            build_lemmatizer_install_command(lemmatizer_install_scope),
+                            language="powershell",
+                        )
+                    else:
+                        st.success(t("lemmatizer_dependencies_ready"))
                 bm25f_params = current_seo_math_config.get("bm25f_params", {})
                 default_bm25f_params = SEO_MATH_CONFIG.get("bm25f_params", {})
                 st.caption(t("seo_math_bm25f_params"))
@@ -1723,6 +1782,13 @@ def render_sidebar() -> Dict[str, Any]:
             index=GOOGLE_ADS_CURRENCIES.index(current_currency_code),
             help=t("currency_help"),
         )
+        restrict_to_input_keywords: bool = st.checkbox(
+            t("keywords_restrict_to_input"),
+            value=bool(
+                current_keywords_config.get("restrict_to_input_keywords", False)
+            ),
+            help=t("keywords_restrict_to_input_help"),
+        )
 
         st.divider()
 
@@ -2033,6 +2099,7 @@ def render_sidebar() -> Dict[str, Any]:
                             "cache_enabled": cache_enabled,
                             "cache_default_ttl_hours": cache_default_ttl_hours,
                             "cache_max_records": cache_max_records,
+                            "restrict_to_input_keywords": restrict_to_input_keywords,
                             "google_trends_default_geo": google_trends_default_geo,
                             "google_trends_default_timeframe": google_trends_default_timeframe,
                             "google_trends_cache_ttl_hours": google_trends_cache_ttl_hours,
@@ -2067,6 +2134,7 @@ def render_sidebar() -> Dict[str, Any]:
         "location_id": selected_location_id,
         "language_id": selected_language_id,
         "currency_code": currency_code,
+        "restrict_to_input_keywords": restrict_to_input_keywords,
         "auto_save_excel": auto_save_excel,
         "cleanup_max_age_days": cleanup_max_age,
         "keyword_prompt": keyword_prompt,

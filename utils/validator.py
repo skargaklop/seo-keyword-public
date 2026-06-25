@@ -10,7 +10,7 @@
 # Key Semantic Blocks: main workflow paths and state transitions in this module
 # Critical Flows: preserve existing runtime behavior and integrations
 # Verification: python -m py_compile, python -m ruff check ., python -m pytest -q
-# CHANGE_SUMMARY: Added file-local module metadata and declaration contracts.
+# CHANGE_SUMMARY: Added file-local module metadata and declaration contracts; PLAN 15-01 URL-15-01: normalize bare domains to https:// in validate_url; Bug fix: validate_urls now returns the NORMALIZED url (validate_url had prepended https:// to bare domains, but validate_urls appended the raw input), which caused "Unsupported URL scheme: missing" downstream in the scraper's validate_safe_url_with_ips for scheme-less inputs.
 
 import os
 import re
@@ -88,7 +88,10 @@ class URLValidator:
             seen.add(url)
             result: ValidationResult = URLValidator.validate_url(url)
             if result.is_valid:
-                valid_urls.append(url)
+                # Append the NORMALIZED url (validate_url prepends https:// to bare
+                # domains). Appending the raw input here caused "Unsupported URL scheme:
+                # missing" downstream in the scraper's validate_safe_url_with_ips.
+                valid_urls.append(result.url)
             else:
                 invalid_results.append(result)
                 logger.warning(f"Invalid URL: {url} - {result.error}")

@@ -34,6 +34,7 @@ from utils.seo_math_analysis import (
     score_generated_text,
     compute_bm25f,
     build_field_weighted_profile,
+    lemmatize_token,
     _tokenize_text,
     _get_default_stopwords,
     _parse_generated_sections,
@@ -43,6 +44,13 @@ from utils.seo_math_analysis import (
     _get_field_b_param,
     _compute_field_length_normalization,
     _compute_bm25f_idf,
+    _get_pymorphy_ru,
+    _get_pymorphy_uk,
+    _get_simplemma,
+    check_lemmatizer_dependencies,
+    build_lemmatizer_install_command,
+    get_lemmatizer_problem_dependencies,
+    LEMMATIZER_DEPENDENCY_PACKAGES,
 )
 
 
@@ -636,34 +644,39 @@ class TestIntentAnalysis:
         assert result.confidence == 0
 
     # Purpose: Test Russian stem matching catches inflected forms.
+    # NOTE: strip_suffixes=True (BROAD mode) is where Cyrillic morphology collapsing
+    # lives after the intent-matcher inversion. The inflected verb "Купите" only
+    # lemmatizes onto the "куп" stem when lemmatization is enabled.
     def test_intent_russian_stem_matching(self):
         corpus = [
             TextSource(text="Купите SEO инструменты для продвижения сайта", field="title", weight=3.0),
         ]
         corpus_hash = _normalize_for_hashing(corpus)
-        result = analyze_intent(corpus_hash, strip_suffixes=False)
+        result = analyze_intent(corpus_hash, strip_suffixes=True)
         assert result.intent_type == "transactional"
         assert result.score > 0
         assert result.confidence > 0
         assert "куп" in result.signals
 
     # Purpose: Test Ukrainian stem matching.
+    # NOTE: strip_suffixes=True (BROAD mode) is where Cyrillic stem matching lives.
     def test_intent_ukrainian_stem_matching(self):
         corpus = [
             TextSource(text="Ціни на послуги SEO просування", field="title", weight=3.0),
         ]
         corpus_hash = _normalize_for_hashing(corpus)
-        result = analyze_intent(corpus_hash, strip_suffixes=False)
+        result = analyze_intent(corpus_hash, strip_suffixes=True)
         assert result.intent_type == "commercial"
         assert result.score > 0
 
     # Purpose: Test informational Russian stems.
+    # NOTE: strip_suffixes=True (BROAD mode) is where Cyrillic stem matching lives.
     def test_intent_informational_russian(self):
         corpus = [
             TextSource(text="Обзоры и сравнение лучших SEO сервисов", field="title", weight=3.0),
         ]
         corpus_hash = _normalize_for_hashing(corpus)
-        result = analyze_intent(corpus_hash, strip_suffixes=False)
+        result = analyze_intent(corpus_hash, strip_suffixes=True)
         assert result.intent_type == "informational"
         assert result.score > 0
         assert result.confidence > 0
@@ -708,10 +721,170 @@ class TestIntentAnalysis:
             TextSource(text="shop.example.com/notebooks", field="displayed_link", weight=1.0),
         ]
         corpus_hash = _normalize_for_hashing(corpus)
-        result = analyze_intent(corpus_hash, strip_suffixes=False)
+        # NOTE: strip_suffixes=True (BROAD) — this corpus leans on Cyrillic stems
+        # (куп/цен/магазин/достав/скидк) which only register in broad/lemma mode.
+        result = analyze_intent(corpus_hash, strip_suffixes=True)
         assert result.intent_type == "transactional"
         assert result.confidence > 0.05
         assert len(result.signals) >= 3
+
+    # Purpose: strip_suffixes is the morphology toggle for intent. The direction is
+    # INVERTED versus naive intuition: DISABLED (False) is the STRICT mode (exact
+    # token == stem equality, no inflection collapsing), while ENABLED (True) is the
+    # BROAD mode (lemmatize then prefix-match so inflected forms collapse onto a
+    # stem). With real lemmatization available, a corpus of purely inflected
+    # transactional verbs must score HIGHER under ENABLED than under DISABLED —
+    # proving the toggle makes the broad mode actually catch MORE.
+    def test_intent_disabled_is_strict_enabled_is_broad(self):
+        corpus = [
+            TextSource(text="купил заказал оплатил доставлено", field="title", weight=3.0),
+            TextSource(text="покупка товаров со скидкою и акциями", field="snippet", weight=2.0),
+        ]
+        corpus_hash = _normalize_for_hashing(corpus)
+        analyze_intent.cache_clear()
+        off = analyze_intent(corpus_hash, strip_suffixes=False)
+        analyze_intent.cache_clear()
+        on = analyze_intent(corpus_hash, strip_suffixes=True)
+        # ENABLED (broad) must catch MORE transactional signal than DISABLED (strict).
+        assert on.score > off.score
+
+    # Purpose: With strip_suffixes DISABLED (strict mode), matching is exact equality
+    # against a canonical stem — no morphology collapsing. The inflected verb "купить"
+    # is NOT equal to the stem "куп", so it must not register that signal under strict
+    # mode. This guards against the matcher quietly falling back to prefix matching.
+    def test_intent_disabled_exact_match_only(self):
+        corpus = [
+            TextSource(text="купить заказать оплатить", field="title", weight=3.0),
+        ]
+        corpus_hash = _normalize_for_hashing(corpus)
+        analyze_intent.cache_clear()
+        off = analyze_intent(corpus_hash, strip_suffixes=False)
+        # Strict mode: inflected forms never equal the bare stem, so the "куп" signal
+        # is absent (or the intent is undetermined with no transactional signal).
+        assert "куп" not in off.signals
+
+
+# Purpose: Test the lazy-loaded real lemmatizer (pymorphy3 + simplemma) that powers
+# the broad/stripped matching mode. These cover (1) real collapse of inflected verbs,
+# and (2) graceful fallback to identity when no lemmatizer library is importable.
+class TestLemmatization:
+
+    # Purpose: The real pymorphy3 lemmatizer must collapse Russian verb inflections
+    # to their dictionary form. "купил" and "куплю" both lemmatize to "купить".
+    # This proves the broad mode has a real morphological engine behind it rather
+    # than a regex suffix hack that cannot handle verbs.
+    def test_lemmatize_token_collapses_russian_verbs(self):
+        _get_pymorphy_ru.cache_clear()
+        _get_pymorphy_uk.cache_clear()
+        _get_simplemma.cache_clear()
+        assert lemmatize_token("купил") == "купить"
+        assert lemmatize_token("куплю") == "купить"
+
+    # Purpose: When every lemmatizer factory returns None (libs not installed), the
+    # public helper must degrade gracefully and return the input token UNCHANGED —
+    # never raise. This guarantees zero startup cost and no hard dependency.
+    def test_lemmatize_token_returns_input_unchanged_when_no_lib(self, monkeypatch):
+        monkeypatch.setattr(
+            "utils.seo_math_analysis._get_pymorphy_ru", lambda: None
+        )
+        monkeypatch.setattr(
+            "utils.seo_math_analysis._get_pymorphy_uk", lambda: None
+        )
+        monkeypatch.setattr(
+            "utils.seo_math_analysis._get_simplemma", lambda: None
+        )
+        # Also clear the cached real instances so the patched lambdas are used.
+        _get_pymorphy_ru.cache_clear()
+        _get_pymorphy_uk.cache_clear()
+        _get_simplemma.cache_clear()
+        assert lemmatize_token("купил") == "купил"
+
+
+# Purpose: UI dependency checker for the optional lemmatizer packages. Mirrors the
+# browser_scraper dependency table: detect installed/missing, build the pip command,
+# and surface problem deps. These tests pin the contract the sidebar relies on.
+class TestLemmatizerDependencyChecker:
+
+    # Purpose: The package list drives the install command and the status table.
+    # pymorphy3-dicts-uk is the PyPI name; it imports as the underscored module.
+    def test_dependency_package_list_contents(self):
+        assert LEMMATIZER_DEPENDENCY_PACKAGES == (
+            "pymorphy3",
+            "pymorphy3-dicts-uk",
+            "simplemma",
+        )
+
+    # Purpose: check_lemmatizer_dependencies must report one status per package,
+    # using the DependencyStatus enum (AVAILABLE/MISSING/...). Keys are import
+    # module names so the UI can map them to display labels.
+    def test_check_returns_status_for_every_package(self):
+        statuses = check_lemmatizer_dependencies()
+        assert set(statuses.keys()) == {
+            "pymorphy3",
+            "pymorphy3_dicts_uk",
+            "simplemma",
+        }
+        # Every value is a DependencyStatus enum member.
+        for status in statuses.values():
+            assert hasattr(status, "value")
+            assert status.value in {"available", "missing", "unknown", "unusable"}
+
+    # Purpose: A present pymorphy3 must be detected as AVAILABLE (it is installed
+    # in this environment). Guards against the detection import name being wrong.
+    def test_pymorphy3_detected_when_present(self):
+        statuses = check_lemmatizer_dependencies()
+        assert statuses["pymorphy3"].value == "available"
+
+    # Purpose: The uk dict imports as the underscored module pymorphy3_dicts_uk;
+    # when present it must read AVAILABLE (installed in this environment).
+    def test_uk_dict_detected_when_present(self):
+        statuses = check_lemmatizer_dependencies()
+        assert statuses["pymorphy3_dicts_uk"].value == "available"
+
+    # Purpose: project scope installs into the current interpreter.
+    def test_install_command_project_scope(self):
+        cmd = build_lemmatizer_install_command("project")
+        assert cmd == "python -m pip install pymorphy3 pymorphy3-dicts-uk simplemma"
+
+    # Purpose: global scope targets the per-user site-packages.
+    def test_install_command_global_scope(self):
+        cmd = build_lemmatizer_install_command("global")
+        assert cmd == "python -m pip install --user pymorphy3 pymorphy3-dicts-uk simplemma"
+
+    # Purpose: default scope is project (UI passes nothing on first render).
+    def test_install_command_default_scope_is_project(self):
+        assert build_lemmatizer_install_command() == build_lemmatizer_install_command("project")
+
+    # Purpose: get_lemmatizer_problem_dependencies filters OUT AVAILABLE statuses
+    # and keeps everything else (missing/unknown/unusable) so the UI only warns
+    # when action is needed.
+    def test_problem_dependencies_excludes_available(self, monkeypatch):
+        from utils.seo_math_analysis import LemmatizerDependencyStatus as _LDS
+        monkeypatch.setattr(
+            "utils.seo_math_analysis.check_lemmatizer_dependencies",
+            lambda: {
+                "pymorphy3": _LDS.AVAILABLE,
+                "pymorphy3_dicts_uk": _LDS.MISSING,
+                "simplemma": _LDS.UNUSABLE,
+            },
+        )
+        problems = get_lemmatizer_problem_dependencies()
+        assert "pymorphy3" not in problems
+        assert "pymorphy3_dicts_uk" in problems
+        assert "simplemma" in problems
+
+    # Purpose: when everything is available, problem list is empty (UI shows ready).
+    def test_problem_dependencies_empty_when_all_available(self, monkeypatch):
+        from utils.seo_math_analysis import LemmatizerDependencyStatus as _LDS
+        monkeypatch.setattr(
+            "utils.seo_math_analysis.check_lemmatizer_dependencies",
+            lambda: {
+                "pymorphy3": _LDS.AVAILABLE,
+                "pymorphy3_dicts_uk": _LDS.AVAILABLE,
+                "simplemma": _LDS.AVAILABLE,
+            },
+        )
+        assert get_lemmatizer_problem_dependencies() == {}
 
 
 # Purpose: Test content gap analysis with coverage metrics.

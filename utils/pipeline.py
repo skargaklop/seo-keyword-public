@@ -1297,11 +1297,11 @@ def run_url_seed_workflow(
 
 # FUNCTION_CONTRACT: run_keyword_seed_workflow
 # Purpose: Generate keyword ideas from manually entered keyword seeds via Google Ads Keyword Planner
-# Input: seed_keywords (List[str]), location_id (str), language_id (str), currency_code (str), run_id (str)
+# Input: seed_keywords (List[str]), location_id (str), language_id (str), currency_code (str), run_id (str), force_refresh (bool), restrict_to_input (bool)
 # Output: Optional[pd.DataFrame] — keyword ideas with metrics; None if no valid seeds
 # Side Effects: renders Streamlit progress; normalizes seeds; stores results in session state; logs progress
-# Business Rules: normalizes and deduplicates seeds; limits to KEYWORD_SEED_SOURCE_URL as source
-# Failure Modes: returns None if no valid seeds after normalization
+# Business Rules: normalizes and deduplicates seeds; limits to KEYWORD_SEED_SOURCE_URL as source; when restrict_to_input=True, drops Ads idea rows whose Keyword is not in the normalized input set (case-insensitive via normalize_keyword_for_lookup) so only the user-entered keywords survive
+# Failure Modes: returns None if no valid seeds after normalization; returns an empty DataFrame (not None) when restrict_to_input drops every row
 # LINKS: requirements.xml#UC-003, knowledge-graph.xml#MOD-003, PLAN 10-02 Task 6
 def run_keyword_seed_workflow(
     seed_keywords: List[str],
@@ -1310,6 +1310,7 @@ def run_keyword_seed_workflow(
     currency_code: str,
     run_id: str = "",
     force_refresh: bool = False,
+    restrict_to_input: bool = False,
 ) -> Optional[pd.DataFrame]:
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -1339,6 +1340,15 @@ def run_keyword_seed_workflow(
     processed_df = processed_df.drop_duplicates(
         subset=["Source URL", "Keyword"], keep="first"
     ).reset_index(drop=True)
+
+    if restrict_to_input:
+        allowed = {normalize_keyword_for_lookup(k) for k in normalized_keywords}
+        processed_df = processed_df.loc[
+            processed_df["Keyword"].map(normalize_keyword_for_lookup).isin(allowed)
+        ].reset_index(drop=True)
+        logger.info(
+            f"{run_prefix}restrict_to_input kept {len(processed_df)} of the Ads idea rows matching the input set"
+        )
 
     progress_bar.progress(1.0, text=_format_pipeline_message("pipeline_done"))
     status_text.success(_format_pipeline_message("pipeline_analysis_complete"))

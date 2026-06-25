@@ -461,6 +461,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "📥 Завантажити CSV",
         "en": "📥 Download CSV",
     },
+    "scroll_to_top_label": {
+        "ru": "Наверх",
+        "uk": "Нагору",
+        "en": "Back to top",
+    },
     "csv_error": {
         "ru": "Ошибка подготовки CSV",
         "uk": "Помилка підготовки CSV",
@@ -755,6 +760,16 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "ru": "Введите по одному ключевому слову на строку",
         "uk": "Введіть по одному ключовому слову на рядок",
         "en": "Enter one keyword per line",
+    },
+    "keywords_restrict_to_input": {
+        "ru": "Ограничить вывод только введёнными ключевыми словами",
+        "uk": "Обмежити вивід лише введеними ключовими словами",
+        "en": "Restrict output to input keywords only",
+    },
+    "keywords_restrict_to_input_help": {
+        "ru": "Убрать идеи Google Ads, которых нет в вашем списке (без синонимов и похожих ключей). Применяется к режиму «Ключевые → идеи Ads».",
+        "uk": "Прибрати ідеї Google Ads, яких немає у вашому списку (без синонімів та схожих ключів). Застосовується до режиму «Ключові → ідеї Ads».",
+        "en": "Drop Google Ads ideas that are not in your input list (no synonyms or similar keywords). Applies to the Keyword → Ads ideas workflow.",
     },
     "keyword_seed_warning": {
         "ru": "Пожалуйста, введите хотя бы одно ключевое слово.",
@@ -1772,14 +1787,64 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Use People Also Ask",
     },
     "seo_math_strip_suffixes": {
-        "ru": "Обрезать суффиксы слов (лемматизация)",
-        "uk": "Обрізати суфікси слів (лематизація)",
-        "en": "Strip word suffixes (lemmatization)",
+        "ru": "Лемматизация слов (реальная морфология)",
+        "uk": "Лематизація слів (реальна морфологія)",
+        "en": "Lemmatize words (real morphology)",
     },
     "seo_math_strip_suffixes_help": {
-        "ru": "Удаляет типичные русские и украинские суффиксы окончаний из отдельных слов (не URL) перед анализом. Например, «купить», «купила», «купили» → «куп» — это помогает группировать словоформы как одну лемму для более точного подсчёта TF-IDF, n-грамм и BM25F.",
-        "uk": "Видаляє типові російські та українські суфікси закінчень з окремих слів (не URL) перед аналізом. Наприклад, «купити», «купила», «купили» → «куп» — це допомагає групувати словоформи як одну лему для точнішого підрахунку TF-IDF, n-грам та BM25F.",
-        "en": "Strips common Russian and Ukrainian inflectional suffixes from individual words (not URLs) before analysis. For example, «купить», «купила», «купили» → «куп» — this groups word forms as one lemma for more accurate TF-IDF, n-gram, and BM25F counts.",
+        "ru": "Лемматизирует отдельные слова (не URL) настоящим морфоанализатором перед анализом: pymorphy3 для русского/украинского, simplemma для остальных языков. Сводит формы к одной лемме — «купить», «купил», «куплю» → «купить», что повышает точность TF-IDF, n-грамм, BM25F и распознавания интента. Зависимости опциональные и подгружаются лениво: без них настройка бездействует (слова не меняются). Для включения выполните: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
+        "uk": "Лематизує окремі слова (не URL) справжнім морфоаналізатором перед аналізом: pymorphy3 для російської/української, simplemma для решти мов. Зводить форми до однієї леми — «купити», «купив», «куплю» → «купити», що підвищує точність TF-IDF, n-грам, BM25F та розпізнавання інтенту. Залежності опційні та підвантажуються ліниво: без них налаштування бездіяльне (слова не змінюються). Для ввімкнення виконайте: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
+        "en": "Lemmatizes individual words (not URLs) with a real morphological analyzer before analysis: pymorphy3 for Russian/Ukrainian, simplemma for other languages. Collapses word forms to one lemma — «купить», «купил», «куплю» → «купить», improving TF-IDF, n-gram, BM25F, and intent detection accuracy. Dependencies are optional and lazy-loaded: without them this setting is a no-op (words are left unchanged). To enable, run: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
+    },
+    "lemmatizer_dependency_status_header": {
+        "ru": "Статус библиотек лемматизации",
+        "uk": "Стан бібліотек лематизації",
+        "en": "Lemmatizer library status",
+    },
+    "lemmatizer_dependency_name_pymorphy3": {
+        "ru": "pymorphy3 (морфология RU)",
+        "uk": "pymorphy3 (морфологія RU)",
+        "en": "pymorphy3 (RU morphology)",
+    },
+    "lemmatizer_dependency_name_pymorphy3_dicts_uk": {
+        "ru": "pymorphy3-dicts-uk (словарь UK)",
+        "uk": "pymorphy3-dicts-uk (словник UK)",
+        "en": "pymorphy3-dicts-uk (UK dictionary)",
+    },
+    "lemmatizer_dependency_name_simplemma": {
+        "ru": "simplemma (лемматизация EN/др.)",
+        "uk": "simplemma (лематизація EN/ін.)",
+        "en": "simplemma (EN/other lemmatizer)",
+    },
+    "lemmatizer_dependencies_ready": {
+        "ru": "Все библиотеки лемматизации установлены и готовы к работе.",
+        "uk": "Усі бібліотеки лематизації встановлені та готові до роботи.",
+        "en": "All lemmatizer libraries are installed and ready.",
+    },
+    "lemmatizer_dependencies_missing_prompt": {
+        "ru": "Включена лемматизация, но не все библиотеки установлены. Без них настройка бездействует. Установите команду ниже.",
+        "uk": "Увімкнено лематизацію, але не всі бібліотеки встановлено. Без них налаштування бездіяльне. Виконайте команду нижче.",
+        "en": "Lemmatization is enabled but not all libraries are installed. Without them this setting is a no-op. Run the command below.",
+    },
+    "lemmatizer_install_scope_label": {
+        "ru": "Область установки",
+        "uk": "Область встановлення",
+        "en": "Install scope",
+    },
+    "lemmatizer_install_scope_project": {
+        "ru": "Проект (текущий интерпретатор)",
+        "uk": "Проєкт (поточний інтерпретатор)",
+        "en": "Project (current interpreter)",
+    },
+    "lemmatizer_install_scope_global": {
+        "ru": "Глобально (user site-packages)",
+        "uk": "Глобально (user site-packages)",
+        "en": "Global (user site-packages)",
+    },
+    "lemmatizer_install_command_label": {
+        "ru": "Команда установки",
+        "uk": "Команда встановлення",
+        "en": "Install command",
     },
     "seo_math_partial_data_warning": {
         "ru": "Часть SERP-полей была пустой. Анализ использует только доступные данные.",

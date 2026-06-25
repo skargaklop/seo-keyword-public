@@ -105,6 +105,27 @@ class TestValidateUrls:
         valid, invalid = URLValidator.validate_urls(urls)
         assert len(valid) == 1
 
+    # Purpose: validate_urls must return the NORMALIZED url (https:// prepended), not the
+    # raw input. Regression: it appended the raw bare-domain string, which later failed
+    # "Unsupported URL scheme: missing" in the scraper's validate_safe_url_with_ips.
+    def test_returns_normalized_url_for_bare_domain(self) -> None:
+        valid, _invalid = URLValidator.validate_urls(["example.com"])
+        assert valid == ["https://example.com"]
+
+    # Purpose: A bare domain with a path must keep its path through normalization.
+    def test_returns_normalized_url_with_path(self) -> None:
+        valid, _invalid = URLValidator.validate_urls(["bigbox.com.ua/catalog"])
+        assert valid == ["https://bigbox.com.ua/catalog"]
+
+    # Purpose: Mixed list preserves normalized form for bare domains and original for
+    # already-schemed URLs, in input order.
+    def test_mixed_list_returns_normalized_forms(self) -> None:
+        valid, invalid = URLValidator.validate_urls(
+            ["example.com", "not a url at all!!!", "https://test.org"]
+        )
+        assert valid == ["https://example.com", "https://test.org"]
+        assert len(invalid) == 1
+
 
 # Purpose: TestValidateApiKeys implementation
 class TestValidateApiKeys:

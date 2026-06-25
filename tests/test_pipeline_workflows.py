@@ -231,6 +231,121 @@ class TestSeedWorkflows:
         assert st.session_state.processed_data.equals(df)
         assert st.session_state.scraped_content == {}
 
+    # Purpose: Test restrict_to_input drops Ads ideas absent from the input set
+    def _patch_ads_handler_with_rows(self, monkeypatch: pytest.MonkeyPatch, rows: list) -> None:
+        def _fake_get_keyword_ideas(seed_keywords, page_url=None, source_url=None):
+            return pd.DataFrame(
+                [
+                    {
+                        "Keyword": row["keyword"],
+                        "Source URL": source_url,
+                        "Avg Monthly Searches": row.get("volume", 10),
+                    }
+                    for row in rows
+                ]
+            )
+
+        monkeypatch.setattr(
+            "utils.pipeline.GoogleAdsHandler",
+            lambda *args, **kwargs: type(
+                "_FakeAdsHandler",
+                (),
+                {"get_keyword_ideas": staticmethod(_fake_get_keyword_ideas)},
+            )(),
+        )
+
+    # Purpose: Test restrict_to_input keeps only keywords present in the input list
+    def test_restrict_to_input_drops_keywords_absent_from_input(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch_ads_handler_with_rows(
+            monkeypatch,
+            [
+                {"keyword": "alpha"},
+                {"keyword": "alpha pro"},  # partial/expansion - must drop
+                {"keyword": "beta"},
+                {"keyword": "gamma synonym"},  # synonym - must drop
+            ],
+        )
+
+        df = pipeline.run_keyword_seed_workflow(
+            seed_keywords=["alpha", "beta"],
+            location_id="2840",
+            language_id="1000",
+            currency_code="USD",
+            restrict_to_input=True,
+        )
+
+        assert df is not None
+        assert sorted(df["Keyword"].tolist()) == ["alpha", "beta"]
+
+    # Purpose: Test restrict_to_input=False (default) returns the full idea set
+    def test_restrict_to_input_disabled_returns_all_rows(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch_ads_handler_with_rows(
+            monkeypatch,
+            [
+                {"keyword": "alpha"},
+                {"keyword": "alpha pro"},
+                {"keyword": "beta"},
+                {"keyword": "gamma synonym"},
+            ],
+        )
+
+        df = pipeline.run_keyword_seed_workflow(
+            seed_keywords=["alpha", "beta"],
+            location_id="2840",
+            language_id="1000",
+            currency_code="USD",
+        )
+
+        assert df is not None
+        assert len(df) == 4
+
+    # Purpose: Test restrict_to_input matches case-insensitively via normalize_keyword_for_lookup
+    def test_restrict_to_input_is_case_insensitive(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch_ads_handler_with_rows(
+            monkeypatch,
+            [
+                {"keyword": "nike"},  # matches "Nike"
+                {"keyword": "NIKE max"},  # expansion - must drop
+            ],
+        )
+
+        df = pipeline.run_keyword_seed_workflow(
+            seed_keywords=["Nike"],
+            location_id="2840",
+            language_id="1000",
+            currency_code="USD",
+            restrict_to_input=True,
+        )
+
+        assert df is not None
+        assert df["Keyword"].tolist() == ["nike"]
+
+    # Purpose: Test restrict_to_input with no matching keywords returns an empty frame, not None
+    def test_restrict_to_input_with_no_matches_returns_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch_ads_handler_with_rows(
+            monkeypatch,
+            [{"keyword": "alpha"}],
+        )
+
+        df = pipeline.run_keyword_seed_workflow(
+            seed_keywords=["zzz"],
+            location_id="2840",
+            language_id="1000",
+            currency_code="USD",
+            restrict_to_input=True,
+        )
+
+        assert df is not None
+        assert len(df) == 0
+
     # Purpose: Test prepare urls for seo scrapes only on explicit transition
     def test_prepare_urls_for_seo_scrapes_only_on_explicit_transition(
         self, monkeypatch: pytest.MonkeyPatch
