@@ -26,10 +26,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-import pandas as pd
-import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -126,7 +124,7 @@ def _run_scenario(scenario: str, config_overrides: Dict[str, Any]) -> Dict[str, 
             f"scenario subprocess failed (rc={result.returncode}):\n"
             f"STDERR:\n{result.stderr}\nSTDOUT:\n{result.stdout}"
         )
-    lines = [l for l in result.stdout.strip().splitlines() if l.strip().startswith("{")]
+    lines = [line for line in result.stdout.strip().splitlines() if line.strip().startswith("{")]
     assert lines, f"no JSON output. stdout={result.stdout}\nstderr={result.stderr}"
     return json.loads(lines[-1])
 
@@ -197,7 +195,7 @@ def test_pipeline_seo_text_keyword_payload_uses_capital_keyword_dict():
     assert result.returncode == 0, (
         f"subprocess failed:\nSTDERR:\n{result.stderr}\nSTDOUT:\n{result.stdout}"
     )
-    lines = [l for l in result.stdout.strip().splitlines() if l.strip().startswith("{")]
+    lines = [line for line in result.stdout.strip().splitlines() if line.strip().startswith("{")]
     data = json.loads(lines[-1])
     assert data["error"] is None, f"seo-text stage errored: {data['error']}"
     kw = data["kw"]
@@ -278,7 +276,7 @@ def _run_checkpoint_scenario(tmp_path, keywords, *, resume=None, clean=False, ru
     )
     if result.returncode != 0:
         raise AssertionError(f"subprocess failed:\nSTDERR:\n{result.stderr}\nSTDOUT:\n{result.stdout}")
-    lines = [l for l in result.stdout.strip().splitlines() if l.strip().startswith("{")]
+    lines = [line for line in result.stdout.strip().splitlines() if line.strip().startswith("{")]
     return json.loads(lines[-1])
 
 
@@ -376,6 +374,6 @@ def test_pipeline_export_failure_returns_result_with_error_flag() -> None:
     assert result.returncode == 0, (
         f"subprocess failed:\nSTDERR:\n{result.stderr}\nSTDOUT:\n{result.stdout}"
     )
-    lines = [l for l in result.stdout.strip().splitlines() if l.strip().startswith("{")]
+    lines = [line for line in result.stdout.strip().splitlines() if line.strip().startswith("{")]
     data = json.loads(lines[-1])
     assert data["export_failed"] is True

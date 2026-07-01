@@ -15,7 +15,6 @@ from utils.browser_scraper import (
     BrowserScrapeResult,
     BrowserScraper,
     BrowserScraperConfig,
-    DependencyStatus,
 )
 from utils.scraper import ScrapedContent, WebScraper
 

@@ -122,7 +122,7 @@ class TestSeedWorkflows:
         monkeypatch.setattr("utils.pipeline.LLMHandler", _FakeLLMHandler)
         monkeypatch.setattr("utils.pipeline.GoogleAdsHandler", _FakeAdsHandler)
 
-        df = pipeline.run_llm_url_workflow(
+        pipeline.run_llm_url_workflow(
             urls=["https://example.com"],
             provider="OpenAI",
             model="gpt-test",

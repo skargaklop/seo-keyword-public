@@ -1159,8 +1159,8 @@ def _semrush_database(gl: str) -> str:
 # LINKS: docs/operational-packets.xml#PACKET-17-SEMRUSH-SERP
 def _semrush_first_text(row: dict[str, Any], fields: Sequence[str]) -> str:
     normalized_row = {(_text(key).strip().lower()): value for key, value in row.items()}
-    for field in fields:
-        value = _text(normalized_row.get(field.lower())).strip()
+    for field_name in fields:
+        value = _text(normalized_row.get(field_name.lower())).strip()
         if value:
             return value
     return ""

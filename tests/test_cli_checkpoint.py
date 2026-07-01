@@ -19,7 +19,6 @@
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 
 def _kw(url_safe: str = "coffee") -> list[str]:

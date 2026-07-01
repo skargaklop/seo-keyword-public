@@ -78,7 +78,7 @@ def _run(argv: list[str], inject: Dict[str, Any]) -> Dict[str, Any]:
             f"subprocess failed (rc={result.returncode}):\nSTDERR:\n{result.stderr}\n"
             f"STDOUT:\n{result.stdout}"
         )
-    lines = [l for l in result.stdout.strip().splitlines() if l.strip().startswith("{")]
+    lines = [line for line in result.stdout.strip().splitlines() if line.strip().startswith("{")]
     assert lines, f"no JSON. stdout={result.stdout}\nstderr={result.stderr}"
     return json.loads(lines[-1])
 

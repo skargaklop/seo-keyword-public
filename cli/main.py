@@ -26,7 +26,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 
 # ---------------------------------------------------------------------------

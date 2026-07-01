@@ -21,7 +21,7 @@ for SERP URL highlighting. Registrable-domain resolution delegates to
 """
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List
 from urllib.parse import urlparse
 
 from utils.domain import registrable_domain

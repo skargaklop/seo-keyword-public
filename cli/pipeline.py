@@ -40,7 +40,6 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from utils.excel_exporter import ExcelExporter
 from utils.google_ads_client import GoogleAdsHandler
 from utils.google_trends_client import (
     GoogleTrendsClient,
