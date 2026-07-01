@@ -7,7 +7,7 @@ import asyncio
 import re
 import ssl
 import warnings
-from typing import Optional, List, Callable, Tuple
+from typing import Optional, List, Callable, Tuple, Any
 from urllib.parse import urljoin
 
 import aiohttp
@@ -17,7 +17,7 @@ import urllib3
 from dataclasses import dataclass, field
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from config.settings import SCRAPING_CONFIG
+from config.settings import SCRAPING_CONFIG, SCRAPER_CONFIG
 from utils.logger import logger
 from utils.cache import scraping_cache
 from utils.url_safety import URLSafetyError, validate_safe_url_with_ips
@@ -30,8 +30,8 @@ from utils.url_safety import URLSafetyError, validate_safe_url_with_ips
 # Exports: WebScraper (class with scrape_urls, scrape_url), ScrapedContent (dataclass)
 # LINKS: requirements.xml#UC-001, technology.xml#DEP-002, development-plan.xml#MOD-005
 # MODULE_MAP: scraper
-# Public Functions: WebScraper.scrape_urls(), WebScraper.scrape_url()
-# Private Helpers: _fetch_url(), _fetch_url_async(), _extract_text(), _extract_metadata(), _build_llm_context(), _validate_url_scheme(), _scrape_urls_sync(), _scrape_urls_async(), _scrape_url_async(), _is_certificate_verification_error(), _extract_requests_peer_ip(), _extract_aiohttp_peer_ip(), _assert_peer_ip_matches_allowlist()
+# Public Functions: WebScraper.scrape_urls(), WebScraper.scrape_url(), WebScraper.scrape_urls_with_browser_fallback()
+# Private Helpers: _fetch_url(), _fetch_url_async(), _extract_text(), _extract_metadata(), _build_llm_context(), _validate_url_scheme(), _scrape_urls_sync(), _scrape_urls_async(), _scrape_url_async(), _is_certificate_verification_error(), _extract_requests_peer_ip(), _extract_aiohttp_peer_ip(), _assert_peer_ip_matches_allowlist(), _scraped_content_from_browser_result(), _is_block_content()
 # Key Semantic Blocks: block_scraper_fetch_url_content, block_scraper_safety_validate, block_scraper_extract_page_text
 # Critical Flows: URL safety validation -> async/sync fetch with redirect following -> trafilatura extraction -> cache store
 # Verification: verification-plan.xml#V-MOD-005
@@ -457,6 +457,173 @@ class WebScraper:
 
         # Fallback to synchronous scraping
         return WebScraper._scrape_urls_sync(urls, progress_callback)
+    # FUNCTION_CONTRACT: _scraped_content_from_browser_result
+    # Purpose: Convert a BrowserScrapeResult (cloakbrowser fallback) into a ScrapedContent row
+    # Input: url (str), browser_result (BrowserScrapeResult)
+    # Output: ScrapedContent — success carries the extracted text/metadata, failure carries the first error
+    # Side Effects: none
+    # Business Rules: Never raises; maps trafilatura parsed_content into ScrapedContent fields
+    # Failure Modes: Returns a failed ScrapedContent when the browser result is unsuccessful
+    # LINKS: requirements.xml#UC-001, utils/browser_scraper.py
+    @staticmethod
+    def _scraped_content_from_browser_result(url: str, browser_result: Any) -> "ScrapedContent":
+        parsed = getattr(browser_result, "parsed_content", {}) or {}
+        title = (parsed.get("title") or "").strip()
+        description = (parsed.get("description") or "").strip()
+        text_content = (parsed.get("text") or "").strip()
+
+        if not getattr(browser_result, "success", False):
+            errors = getattr(browser_result, "errors", []) or []
+            error_msg = errors[0] if errors else "Browser fallback failed"
+            logger.warning(f"Browser fallback failed for {url}: {error_msg}")
+            return ScrapedContent(url=url, success=False, error=error_msg)
+
+        # Reuse the same LLM-context assembly shape WebScraper._extract_text produces so downstream
+        # keyword/SEO consumers see identical formatting regardless of scrape path.
+        llm_context = WebScraper._build_llm_context(
+            text=text_content,
+            title=title,
+            description=description,
+            keywords=[],
+        )
+        logger.info(f"Browser fallback recovered {len(llm_context)} chars from {url}")
+        return ScrapedContent(
+            url=url,
+            title=title,
+            meta_description=description,
+            meta_keywords=[],
+            text=llm_context,
+            success=True,
+        )
+    # FUNCTION_CONTRACT: _is_block_content
+    # Purpose: Detect a requests-scrape that technically "succeeded" but landed on a captcha / Cloudflare
+    #   interstitial page. Challenge pages carry a <title>, so _extract_text marks them success=True — without
+    #   this check the browser fallback would never fire for the exact failure mode it exists to handle.
+    # Input: result (ScrapedContent)
+    # Output: bool — True when the row is a success-flagged but content-blocked page needing browser retry
+    # Side Effects: None (pure check); lazily imports the shared marker detector from browser_scraper
+    # Business Rules: Hard failures (success=False) return False — they are handled by the not-success branch.
+    #   Genuine article content returns False so real successes are never retried.
+    # Failure Modes: Never raises; any import/detection error degrades to False (treat as not-blocked).
+    # LINKS: requirements.xml#UC-001, utils/browser_scraper.py#_detect_content_block
+    @staticmethod
+    def _is_block_content(result: "ScrapedContent") -> bool:
+        if not result.success:
+            return False
+        haystack = " ".join(part for part in (result.title or "", result.text or "") if part).lower()
+        if not haystack:
+            return False
+        try:
+            from utils.browser_scraper import _detect_content_block
+        except Exception as exc:  # pragma: no cover - defensive: optional module wiring
+            logger.warning(f"_is_block_content detector unavailable: {exc}")
+            return False
+        return _detect_content_block(haystack)
+
+    # FUNCTION_CONTRACT: scrape_urls_with_browser_fallback
+    # Purpose: Scrape URLs via requests, then retry the FAILED ones through cloakbrowser (url_llm fallback)
+    # Input: urls (List[str]), progress_callback (Optional[Callable] = None), use_async (bool = True),
+    #   fallback_enabled (Optional[bool] = None), fallback_headless (Optional[bool] = None)
+    # Output: List[ScrapedContent] — one per url, in input order. A real browser recovery replaces the original
+    #   row; a browser-landed block page becomes a forced final failure; an untouched success stays as-is.
+    # Side Effects: Reads SCRAPER_CONFIG; lazily creates a BrowserScraper via create_browser_scraper; on a real
+    #   recovery PERSISTS the recovered content to scraping_cache (overwriting a stale block entry); on a
+    #   browser-landed block INVALIDATES any stale cached block entry so it is not re-served.
+    # Business Rules: Fallback runs ONLY when enabled AND cloakbrowser deps are available; retried URLs are those
+    #   that hard-failed OR landed on a captcha/Cloudflare block page despite success=True; a browser retry that
+    #   itself lands on a block page is treated as a FINAL failure (challenge/thin text never fed to the LLM);
+    #   a browser retry that hard-fails keeps the original result; genuinely successful rows are untouched.
+    # Failure Modes: Never raises; browser errors degrade to the original requests-scrape result
+    # LINKS: requirements.xml#UC-001, utils/browser_scraper.py#scrape_content, config.settings.SCRAPER_CONFIG
+    @staticmethod
+    def scrape_urls_with_browser_fallback(
+        urls: List[str],
+        progress_callback: Optional[Callable] = None,
+        use_async: bool = True,
+        fallback_enabled: Optional[bool] = None,
+        fallback_headless: Optional[bool] = None,
+    ) -> List[ScrapedContent]:
+        # Primary path: unchanged requests-based scrape.
+        results = WebScraper.scrape_urls(urls, progress_callback=progress_callback, use_async=use_async)
+
+        # Resolve the toggle (explicit arg wins, else settings). No hardcoded default — settings.yaml owns it.
+        enabled = (
+            fallback_enabled
+            if fallback_enabled is not None
+            else bool(SCRAPER_CONFIG.get("content_browser_fallback_enabled", True))
+        )
+        if not enabled:
+            return results
+
+        # Retry hard failures AND requests rows that "succeeded" but landed on a captcha /
+        # Cloudflare interstitial page (challenge pages carry a <title>, so they are success=True).
+        needs_retry = [r.url for r in results if (not r.success) or WebScraper._is_block_content(r)]
+        if not needs_retry:
+            return results
+
+        # Lazy import keeps the requests-only import graph clean when no fallback is needed.
+        try:
+            from utils.browser_scraper import create_browser_scraper
+        except Exception as exc:  # pragma: no cover - defensive: optional module wiring
+            logger.warning(f"Browser fallback unavailable (import failed): {exc}")
+            return results
+
+        browser_scraper = create_browser_scraper()
+        if browser_scraper is None:
+            logger.info("Browser fallback skipped: cloakbrowser dependencies unavailable")
+            return results
+
+        headless = (
+            fallback_headless
+            if fallback_headless is not None
+            else bool(SCRAPER_CONFIG.get("content_browser_fallback_headless", True))
+        )
+
+        # Recover each retry candidate via cloakbrowser. A browser result is "usable" only when it
+        # succeeded AND did not itself land on a captcha/Cloudflare/Akamai block page — otherwise the
+        # challenge/thin text must NOT be fed to the LLM as site content, so it becomes a final failure.
+        recovered_by_url: dict = {}
+        forced_failure_by_url: dict = {}
+        for url in needs_retry:
+            logger.info(f"Retrying failed/blocked URL via browser fallback: {url}")
+            browser_result = browser_scraper.scrape_content(url, {"headless": headless})
+            recovered = WebScraper._scraped_content_from_browser_result(url, browser_result)
+            if recovered.success and not WebScraper._is_block_content(recovered):
+                recovered_by_url[url] = recovered
+                # Persist the recovery so the next rerun hits the good result instead of
+                # re-scraping (and re-failing) the original path. A success-but-blocked
+                # requests page may already be cached; this overwrites it with real content.
+                scraping_cache.set(url, recovered)
+            elif recovered.success:
+                # Browser "succeeded" but landed on a block interstitial → treat as final failure.
+                logger.warning(
+                    f"Browser fallback for {url} landed on a block page; treating as final failure"
+                )
+                forced_failure_by_url[url] = ScrapedContent(
+                    url=url,
+                    success=False,
+                    error="Page remains blocked (captcha / Cloudflare / Akamai) after browser fallback",
+                )
+                # Drop any stale success-but-blocked entry so a later rerun does not serve the
+                # cached block page as if it were valid content.
+                scraping_cache.invalidate(url)
+            else:
+                # Browser retry hard-failed — keep the original result in the merge below.
+                logger.info(f"Browser fallback failed for {url}; keeping original result")
+
+        if not recovered_by_url and not forced_failure_by_url:
+            return results
+
+        # Merge precedence per URL: real recovery > forced failure > original row.
+        merged: List[ScrapedContent] = []
+        for r in results:
+            if r.url in recovered_by_url:
+                merged.append(recovered_by_url[r.url])
+            elif r.url in forced_failure_by_url:
+                merged.append(forced_failure_by_url[r.url])
+            else:
+                merged.append(r)
+        return merged
     # FUNCTION_CONTRACT: _scrape_urls_sync
     # Purpose: Implement the  scrape urls sync helper for this module.
     # Input: urls (List[str]), progress_callback (Optional[Callable] = None)

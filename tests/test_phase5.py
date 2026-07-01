@@ -32,6 +32,7 @@ class TestSerpProviderOptions:
             "ScraperAPI": "scraperapi",
             "DataForSEO": "dataforseo",
             "Serpstat": "serpstat",
+            "Semrush": "semrush",
             "Serpstack": "serpstack",
             "ScaleSERP": "scaleserp",
             "ValueSERP": "valueserp",

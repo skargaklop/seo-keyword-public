@@ -1711,6 +1711,41 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "Мат-аналіз згенерованого тексту",
         "en": "Math analysis of generated text",
     },
+    "seo_math_show_scraped_text": {
+        "ru": "Показывать спарсенный текст",
+        "uk": "Показувати спарсений текст",
+        "en": "Show scraped text",
+    },
+    "seo_math_analyze_scraped_text": {
+        "ru": "Мат-анализ спарсенного текста",
+        "uk": "Мат-аналіз спарсеного тексту",
+        "en": "Math analysis of scraped text",
+    },
+    "scraped_math_report_header": {
+        "ru": "Математический анализ спарсенного текста",
+        "uk": "Математичний аналіз спарсеного тексту",
+        "en": "Mathematical Analysis of Scraped Text",
+    },
+    "scraped_math_report_desc": {
+        "ru": "Агрегированный анализ текста, полученного после URL-скрейпинга.",
+        "uk": "Агрегований аналіз тексту, отриманого після URL-скрейпінгу.",
+        "en": "Aggregate analysis of text collected after URL scraping.",
+    },
+    "scraped_math_corpus_source": {
+        "ru": "Источник корпуса: спарсенный текст",
+        "uk": "Джерело корпусу: спарсений текст",
+        "en": "Corpus source: scraped text",
+    },
+    "seo_math_total_words_label": {
+        "ru": "Всего слов",
+        "uk": "Усього слів",
+        "en": "Total Words",
+    },
+    "seo_math_density_pct_label": {
+        "ru": "Плотность %",
+        "uk": "Щільність %",
+        "en": "Density %",
+    },
     "gen_math_report_header": {
         "ru": "Математический анализ сгенерированного текста",
         "uk": "Математичний аналіз згенерованого тексту",
@@ -1792,9 +1827,9 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Lemmatize words (real morphology)",
     },
     "seo_math_strip_suffixes_help": {
-        "ru": "Лемматизирует отдельные слова (не URL) настоящим морфоанализатором перед анализом: pymorphy3 для русского/украинского, simplemma для остальных языков. Сводит формы к одной лемме — «купить», «купил», «куплю» → «купить», что повышает точность TF-IDF, n-грамм, BM25F и распознавания интента. Зависимости опциональные и подгружаются лениво: без них настройка бездействует (слова не меняются). Для включения выполните: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
-        "uk": "Лематизує окремі слова (не URL) справжнім морфоаналізатором перед аналізом: pymorphy3 для російської/української, simplemma для решти мов. Зводить форми до однієї леми — «купити», «купив», «куплю» → «купити», що підвищує точність TF-IDF, n-грам, BM25F та розпізнавання інтенту. Залежності опційні та підвантажуються ліниво: без них налаштування бездіяльне (слова не змінюються). Для ввімкнення виконайте: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
-        "en": "Lemmatizes individual words (not URLs) with a real morphological analyzer before analysis: pymorphy3 for Russian/Ukrainian, simplemma for other languages. Collapses word forms to one lemma — «купить», «купил», «куплю» → «купить», improving TF-IDF, n-gram, BM25F, and intent detection accuracy. Dependencies are optional and lazy-loaded: without them this setting is a no-op (words are left unchanged). To enable, run: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
+        "ru": "Лемматизирует отдельные слова (не URL) настоящим морфоанализатором перед анализом: pymorphy3 для русского/украинского, simplemma для остальных языков. Сводит формы к одной лемме — «купить», «купил», «куплю» → «купить», что повышает точность TF-IDF, n-грамм, BM25F, совместной встречаемости и распознавания интента. Зависимости опциональные и подгружаются лениво: без них настройка бездействует (слова не меняются). Для включения выполните: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
+        "uk": "Лематизує окремі слова (не URL) справжнім морфоаналізатором перед аналізом: pymorphy3 для російської/української, simplemma для решти мов. Зводить форми до однієї леми — «купити», «купив», «куплю» → «купити», що підвищує точність TF-IDF, n-грам, BM25F, спільної зустрічаності та розпізнавання інтенту. Залежності опційні та підвантажуються ліниво: без них налаштування бездіяльне (слова не змінюються). Для ввімкнення виконайте: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
+        "en": "Lemmatizes individual words (not URLs) with a real morphological analyzer before analysis: pymorphy3 for Russian/Ukrainian, simplemma for other languages. Collapses word forms to one lemma — «купить», «купил», «куплю» → «купить», improving TF-IDF, n-gram, BM25F, co-occurrence, and intent detection accuracy. Dependencies are optional and lazy-loaded: without them this setting is a no-op (words are left unchanged). To enable, run: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
     },
     "lemmatizer_dependency_status_header": {
         "ru": "Статус библиотек лемматизации",
@@ -1932,8 +1967,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Related Searches",
     },
     "seo_math_paa_label": {
-        "ru": "People Also Ask",
-        "uk": "People Also Ask",
+        "ru": "Люди также ищут",
+        "uk": "Люди також шукають",
         "en": "People Also Ask",
     },
     "seo_math_bm25f_scores_header": {
@@ -2001,6 +2036,126 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "ru": "Сигналы SEO",
         "uk": "Сигнали SEO",
         "en": "SEO Signals",
+    },
+    "seo_math_bm25f_k1": {
+        "ru": "k1",
+        "uk": "k1",
+        "en": "k1",
+    },
+    "seo_math_bm25f_b_body": {
+        "ru": "b (основной текст)",
+        "uk": "b (основний текст)",
+        "en": "b_body",
+    },
+    "seo_math_bm25f_b_title": {
+        "ru": "b (заголовок)",
+        "uk": "b (заголовок)",
+        "en": "b_title",
+    },
+    "seo_math_bm25f_b_snippet": {
+        "ru": "b (сниппет)",
+        "uk": "b (сніпет)",
+        "en": "b_snippet",
+    },
+    "seo_math_weight_serp_title": {
+        "ru": "Заголовок SERP",
+        "uk": "Заголовок SERP",
+        "en": "SERP title",
+    },
+    "seo_math_weight_page_title": {
+        "ru": "Заголовок страницы",
+        "uk": "Заголовок сторінки",
+        "en": "Page title",
+    },
+    "seo_math_weight_h1": {
+        "ru": "H1",
+        "uk": "H1",
+        "en": "H1",
+    },
+    "seo_math_weight_meta_description": {
+        "ru": "Мета-описание",
+        "uk": "Мета-опис",
+        "en": "Meta description",
+    },
+    "seo_math_weight_serp_snippet": {
+        "ru": "Сниппет SERP",
+        "uk": "Сніпет SERP",
+        "en": "SERP snippet",
+    },
+    "seo_math_weight_related_searches": {
+        "ru": "Похожие запросы",
+        "uk": "Пов'язані запити",
+        "en": "Related searches",
+    },
+    "seo_math_weight_people_also_ask": {
+        "ru": "Люди также ищут",
+        "uk": "Люди також шукають",
+        "en": "People Also Ask",
+    },
+    "seo_math_weight_trends_related": {
+        "ru": "Похожие из Trends",
+        "uk": "Пов'язані з Trends",
+        "en": "Trends related",
+    },
+    "seo_math_weight_body_text": {
+        "ru": "Основной текст",
+        "uk": "Основний текст",
+        "en": "Body text",
+    },
+    "seo_math_weight_anchor_text": {
+        "ru": "Анкорный текст",
+        "uk": "Анкорний текст",
+        "en": "Anchor text",
+    },
+    "seo_math_signal_title_alignment": {
+        "ru": "Соответствие заголовка",
+        "uk": "Відповідність заголовка",
+        "en": "Title alignment",
+    },
+    "seo_math_signal_content_effort": {
+        "ru": "Глубина контента",
+        "uk": "Глибина контенту",
+        "en": "Content effort",
+    },
+    "seo_math_signal_topical_overlap": {
+        "ru": "Тематическое пересечение",
+        "uk": "Тематичний перетин",
+        "en": "Topical overlap",
+    },
+    "seo_math_signal_simhash": {
+        "ru": "SimHash (похожесть)",
+        "uk": "SimHash (схожість)",
+        "en": "SimHash",
+    },
+    "seo_math_select_column": {
+        "ru": "Выбрать",
+        "uk": "Обрати",
+        "en": "Select",
+    },
+    "seo_math_select_column_help": {
+        "ru": "Отметьте термины для передачи в Google Ads / SERP",
+        "uk": "Позначте терміни для передачі в Google Ads / SERP",
+        "en": "Tick terms to send to Google Ads / SERP",
+    },
+    "seo_math_ngram_label": {
+        "ru": "N-грамма",
+        "uk": "N-грама",
+        "en": "N-gram",
+    },
+    "seo_math_count_label": {
+        "ru": "Количество",
+        "uk": "Кількість",
+        "en": "Count",
+    },
+    "seo_math_df_label": {
+        "ru": "Частота документа",
+        "uk": "Частота документа",
+        "en": "Document frequency",
+    },
+    "seo_math_jaccard_label": {
+        "ru": "Жаккар",
+        "uk": "Жаккар",
+        "en": "Jaccard",
     },
     "cache_header": {
         "ru": "Кэш запросов",
@@ -2221,6 +2376,21 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "ru": "OPT-IN: Требует установки cloakbrowser (pip install cloakbrowser)",
         "uk": "OPT-IN: Потрібна встановлення cloakbrowser (pip install cloakbrowser)",
         "en": "OPT-IN: Requires cloakbrowser (pip install cloakbrowser)",
+    },
+    "scraper_content_browser_fallback_enabled": {
+        "ru": "Браузерный фолбэк при ошибке скрапинга (captcha / Cloudflare)",
+        "uk": "Браузерний фолбек при помилці скрапінгу (captcha / Cloudflare)",
+        "en": "Browser fallback on scrape failure (captcha / Cloudflare)",
+    },
+    "scraper_content_browser_fallback_enabled_help": {
+        "ru": "Повторяет URL через cloakbrowser, если обычный скрапинг не удался (captcha, Cloudflare Turnstile, 403)",
+        "uk": "Повторює URL через cloakbrowser, якщо звичайний скрапінг не вдався (captcha, Cloudflare Turnstile, 403)",
+        "en": "Retries the URL via cloakbrowser when requests-based scraping fails (captcha, Cloudflare Turnstile, 403)",
+    },
+    "scraper_content_browser_fallback_headless": {
+        "ru": "Браузерный фолбэк: запускать headless",
+        "uk": "Браузерний фолбек: запускати headless",
+        "en": "Browser fallback: run browser headless",
     },
     "scraper_not_installed_warning": {
         "ru": "Браузерный скрапинг включен, но зависимости не установлены. Установите: pip install cloakbrowser",

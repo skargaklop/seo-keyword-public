@@ -5,8 +5,11 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).parent.parent
 
-# Load environment variables from project root .env
-load_dotenv(BASE_DIR / ".env", override=True)
+# Load environment variables from project root .env.
+# SEO_DISABLE_DOTENV lets tests skip the on-disk .env (which may carry real
+# API keys) so config-key presence checks run in a controlled environment.
+if os.environ.get("SEO_DISABLE_DOTENV", "").lower() not in ("1", "true", "yes"):
+    load_dotenv(BASE_DIR / ".env", override=True)
 CONFIG_PATH = BASE_DIR / "config" / "settings.yaml"
 
 
@@ -22,7 +25,7 @@ CONFIG_PATH = BASE_DIR / "config" / "settings.yaml"
 # Key Semantic Blocks: block_settings_load_yaml_parse, block_settings_derived_constants
 # Critical Flows: every module reads derived constants; sidebar writes back via save_config
 # Verification: V-SUITE
-# CHANGE_SUMMARY: Added module-level contracts; added FUNCTION_CONTRACT blocks for load_config and save_config; removed post-declaration docstrings; added SERP UI constants (SERP_PROVIDER_OPTIONS, SERP_LOCATION_OPTIONS, SERP_LANGUAGE_OPTIONS) and get_available_serp_providers(); added Phase 6 advanced SERP option dicts (SERP_DEVICE_OPTIONS, SERP_SEARCH_TYPE_OPTIONS, SERP_SAFE_SEARCH_OPTIONS, SERP_GOOGLE_DOMAIN_OPTIONS); Phase 7 Cycle 3: removed HasData, added SearchApi.io, Zenserp, ScraperAPI, DataForSEO, Serpstat to SERP_PROVIDER_OPTIONS; _SERP_ENV_MAP updated with tuple env_var for DataForSEO dual auth; get_available_serp_providers now handles tuple env vars via _check_env_keys helper; Phase 8 Task 5: added SEO_MATH_CONFIG export; Phase 8 Plan 03: added top-level CRAWLER_CONFIG export; Phase 10 Task 1: added CACHE_CONFIG, GOOGLE_TRENDS_CONFIG, SCRAPER_CONFIG exports
+# CHANGE_SUMMARY: Added module-level contracts; added FUNCTION_CONTRACT blocks for load_config and save_config; removed post-declaration docstrings; added SERP UI constants (SERP_PROVIDER_OPTIONS, SERP_LOCATION_OPTIONS, SERP_LANGUAGE_OPTIONS) and get_available_serp_providers(); added Phase 6 advanced SERP option dicts (SERP_DEVICE_OPTIONS, SERP_SEARCH_TYPE_OPTIONS, SERP_SAFE_SEARCH_OPTIONS, SERP_GOOGLE_DOMAIN_OPTIONS); Phase 7 Cycle 3: removed HasData, added SearchApi.io, Zenserp, ScraperAPI, DataForSEO, Serpstat to SERP_PROVIDER_OPTIONS; _SERP_ENV_MAP updated with tuple env_var for DataForSEO dual auth; get_available_serp_providers now handles tuple env vars via _check_env_keys helper; Phase 8 Task 5: added SEO_MATH_CONFIG export; Phase 8 Plan 03: added top-level CRAWLER_CONFIG export; Phase 10 Task 1: added CACHE_CONFIG, GOOGLE_TRENDS_CONFIG, SCRAPER_CONFIG exports; Roadmap Task 1: SEO_DESCRIPTION_PROMPT now carries appended TIER 4 HUMANIZER + SELF-CHECK stages (sourced from docs/humanizer-skill.md) — derived export unchanged
 # FUNCTION_CONTRACT: load_config
 # Purpose: Parse settings.yaml into a nested dict, raising if the file is absent
 # Input: (none)
@@ -114,6 +117,7 @@ SERP_PROVIDER_OPTIONS: dict[str, str] = {
     "ScraperAPI": "scraperapi",
     "DataForSEO": "dataforseo",
     "Serpstat": "serpstat",
+    "Semrush": "semrush",
     "Serpstack": "serpstack",
     "ScaleSERP": "scaleserp",
     "ValueSERP": "valueserp",
@@ -186,6 +190,7 @@ _SERP_ENV_MAP: dict[str, str | tuple[str, ...]] = {
     "scraperapi": "SCRAPERAPI_KEY",
     "dataforseo": ("DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD"),
     "serpstat": "SERPSTAT_TOKEN",
+    "semrush": "SEMRUSH_API_KEY",
     "serpstack": "SERPSTACK_KEY",
     "scaleserp": "SCALESERP_KEY",
     "valueserp": "VALUESERP_KEY",

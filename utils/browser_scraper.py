@@ -34,8 +34,9 @@ except Exception:  # pragma: no cover - optional dependency guard
 try:  # Optional playwright dependency — TargetClosedError for graceful error handling
     from playwright._impl._errors import TargetClosedError
 except Exception:  # pragma: no cover - optional dependency guard
+    # Fallback sentinel — never raised when playwright is absent.
     class TargetClosedError(Exception):  # type: ignore[assignment]
-        """Fallback sentinel — never raised when playwright is absent."""
+        pass
 
 from config.settings import load_config
 from utils.logger import logger
@@ -48,9 +49,9 @@ from utils.logger import logger
 # Exports: DependencyStatus, BrowserEngine, ParserType, BrowserScraperConfig, BrowserScrapeResult, BrowserScraper, create_browser_scraper
 # LINKS: requirements.xml#UC-010, .planning/phases/12-browser-google-parsing-prompt-cleanup/12-01-PLAN.md#task-12-02
 # MODULE_MAP: utils/browser_scraper.py
-# Public Functions: BrowserScraper.check_dependencies, BrowserScraper.is_available, BrowserScraper.dependency_install_message, BrowserScraper.scrape_google_trends, BrowserScraper.scrape_serp, create_browser_scraper, build_optional_dependency_install_command, get_problem_dependencies, get_dependency_install_message, get_no_browser_engine_error
-# Private Helpers: _check_dependency, _check_playwright_binary, _build_cache_key, _parse_with_trafilatura, _execute_cloakbrowser_trends, _execute_cloakbrowser_serp, _wait_for_dynamic_content, _detect_captcha, _load_js_parser, _handle_cookie_consent, _click_next_page, _extract_serp_data, _extract_with_trafilatura, _apply_rate_limit, _detect_trends_block, _parse_trends_csv, _parse_trends_structural_html, _validate_trends_keyword, _extract_trends_widget_data, _load_session_state, _save_session_state
-# Key Semantic Blocks: block_browser_dependency_check, block_browser_trends_csv_download, block_browser_serp_parsing, block_browser_handle_pagination, block_browser_cookie_handling, block_browser_paa_extraction, block_browser_rich_snippets
+# Public Functions: BrowserScraper.check_dependencies, BrowserScraper.is_available, BrowserScraper.dependency_install_message, BrowserScraper.scrape_google_trends, BrowserScraper.scrape_serp, BrowserScraper.scrape_content, create_browser_scraper, build_optional_dependency_install_command, get_problem_dependencies, get_dependency_install_message, get_no_browser_engine_error
+# Private Helpers: _check_dependency, _check_playwright_binary, _build_cache_key, _parse_with_trafilatura, _execute_cloakbrowser_trends, _execute_cloakbrowser_serp, _execute_cloakbrowser_content, _detect_content_block, _wait_for_dynamic_content, _detect_captcha, _load_js_parser, _handle_cookie_consent, _click_next_page, _extract_serp_data, _extract_with_trafilatura, _apply_rate_limit, _detect_trends_block, _parse_trends_csv, _parse_trends_structural_html, _validate_trends_keyword, _extract_trends_widget_data, _load_session_state, _save_session_state
+# Key Semantic Blocks: block_browser_dependency_check, block_browser_trends_csv_download, block_browser_serp_parsing, block_browser_content_fallback, block_browser_handle_pagination, block_browser_cookie_handling, block_browser_paa_extraction, block_browser_rich_snippets
 # Critical Flows: Dependency check → engine selection → stealth config → cookie handling → pagination → SERP/Trends extraction → trafilatura fallback → result normalization
 # Verification: verification-plan.xml#V-10-BROWSER-SCRAPER, Phase 11 Task 11-14 validation tests, Phase 12 grep guards
 # CHANGE_SUMMARY: Wave 1 (Phase 10 Task 10): Initial implementation. Wave 2 (Phase 11 Task 11-14): Integrated working parse_google_bigbox.py logic with GRACE compliance, CSS-class-agnostic SERP parser, pagination, PAA extraction, proper stealth configuration, and trafilatura integration. Wave 3 (Phase 12): Added PLAYWRIGHT and AUTO to BrowserEngine enum, playwright binary detection, browser-based SERP provider (browser_cloakbrowser), and removed suffix_stripping option. Wave 4 (Phase 16 Task 2): Replaced DOM/JS extraction with CSV-download-based extraction, added module-level helpers (_detect_trends_block, _parse_trends_csv, _validate_trends_keyword, _load_session_state, _save_session_state), added BrowserScraper instance methods for CSV download flow, updated GRACE log markers from _trends_parsing to _trends_csv.
@@ -318,6 +319,33 @@ def _detect_serp_block(body_text: str) -> bool:
     return any(marker in text for marker in markers)
 
 
+# Purpose: Detect a captcha / Cloudflare interstitial on an arbitrary scraped page.
+def _detect_content_block(body_text: str) -> bool:
+    if not body_text:
+        return False
+    text = body_text.lower()
+    # Google/generic captcha + Cloudflare Turnstile/challenge markers.
+    markers = [
+        "captcha",
+        "verify you are human",
+        "unusual traffic",
+        "our systems have detected",
+        "error 429",
+        "too many requests",
+        "not a robot",
+        "just a moment",          # Cloudflare interstitial title
+        "checking your browser",  # Cloudflare challenge
+        "cf-challenge",
+        "turnstile",
+        "attention required",     # Cloudflare 1020 page
+        "access denied",          # Akamai edge interstitial
+        "errors.edgesuite.net",   # Akamai edge error reference page
+        "enable javascript and cookies",  # generic bot-check demand
+        "pardon our interruption",         # PerimeterX/HUMAN interstitial
+    ]
+    return any(marker in text for marker in markers)
+
+
 # FUNCTION_CONTRACT: _is_trends_block_response
 # Purpose: Identify a Google Trends navigation response that indicates a real block
 # Input: response (Any)
@@ -376,8 +404,8 @@ def _parse_trends_csv(csv_content: str) -> list[dict[str, Any]]:
         "Month",               # EN month
     }
 
+    # A data row is [date-like, value-like]. Robust across granularities.
     def _is_data_row(row: list[str]) -> bool:
-        """A data row is [date-like, value-like]. Robust across granularities."""
         if not row or len(row) < 2:
             return False
         date_cell = (row[0] or "").strip()
@@ -1965,6 +1993,188 @@ class BrowserScraper:
         result = self._execute_cloakbrowser_serp(query, params)
 
         return result
+
+
+    # SEMANTIC_BLOCK: block_browser_content_fallback
+    # Arbitrary-URL content scraping fallback (url_llm): used when the requests-based scraper fails
+    # on captcha / Cloudflare Turnstile / 403. Mirrors scrape_google_trends / scrape_serp shape.
+
+    # FUNCTION_CONTRACT: BrowserScraper._detect_content_block
+    # Purpose: Check a navigated page body for captcha / Cloudflare Turnstile interstitial markers
+    # Input: page (Any) — browser page object
+    # Output: bool — True when a block interstitial is detected
+    # Side Effects: Reads page body text
+    # Business Rules: Delegates to module-level _detect_content_block after extracting visible text
+    # Failure Modes: Returns False on any exception (including timeout)
+    # LINKS: requirements.xml#UC-001, utils/browser_scraper.py#_detect_content_block
+    def _detect_content_block(self, page: Any) -> bool:
+        try:
+            text = page.locator("body").inner_text(timeout=5_000)
+        except Exception:
+            try:
+                text = page.content()
+            except Exception:
+                return False
+        return _detect_content_block(text)
+
+    # FUNCTION_CONTRACT: BrowserScraper._execute_cloakbrowser_content
+    # Purpose: Scrape an arbitrary URL's rendered content with cloakbrowser (url_llm fallback path)
+    # Input: url (str), params (Dict[str, Any])
+    # Output: BrowserScrapeResult
+    # Side Effects: Launches browser, navigates to url, waits for DOM, extracts text via trafilatura
+    # Business Rules: headless from params/config; detects captcha + Cloudflare Turnstile before extracting;
+    #   always closes browser resources in finally
+    # Failure Modes: Returns failure result when cloakbrowser missing, page is blocked, or extraction fails
+    # LINKS: requirements.xml#UC-001, utils/scraper.py, utils/browser_scraper.py#_execute_cloakbrowser_serp
+    # GRACE_LOG_MARKER: ENTER_content_fallback, EXIT_content_fallback, ERROR_content_fallback
+    def _execute_cloakbrowser_content(
+        self,
+        url: str,
+        params: Dict[str, Any],
+    ) -> BrowserScrapeResult:
+        logger.info(f"[GRACE:ENTER_content_fallback] Browser content fallback for {url}")
+        _ensure_windows_playwright_event_loop_policy()
+
+        try:
+            from cloakbrowser import launch
+        except ImportError:
+            logger.error("[GRACE:ERROR_content_fallback] Cloakbrowser not installed")
+            return BrowserScrapeResult(
+                source="none",
+                success=False,
+                errors=[f"Cloakbrowser not installed or unusable. {get_dependency_install_message()}"],
+            )
+
+        cache_key = self._build_cache_key("content", {"url": url, **params})
+        browser = None
+        page = None
+
+        def _failure(message: str, status: str) -> BrowserScrapeResult:
+            logger.warning(f"[GRACE:ERROR_content_fallback] {message}")
+            return BrowserScrapeResult(
+                source="cloakbrowser",
+                cache_key=cache_key,
+                success=False,
+                errors=[message],
+                metadata={"engine": "cloakbrowser", "mode": "content", "status": status, "url": url},
+            )
+
+        try:
+            self._apply_rate_limit()
+
+            timezone = params.get("timezone", "Europe/Kyiv")
+            locale = params.get("locale", "uk-UA")
+            user_agent = (
+                self.config.user_agent
+                or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+            )
+            # headless: explicit per-call param wins, else the scraper config default.
+            headless = bool(params.get("headless", self.config.headless))
+
+            browser = launch(
+                headless=headless,
+                timezone=timezone,
+                locale=locale,
+                stealth_args=True,
+                humanize=True,
+                human_preset="default",
+                args=["--disable-blink-features=AutomationControlled", "--window-size=1920,1080"],
+            )
+
+            ctx = browser.new_context(
+                user_agent=user_agent,
+                viewport=self.config.viewport,
+                locale=locale,
+                timezone_id=timezone,
+                extra_http_headers={"Accept-Language": f"{locale},uk;q=0.9,ru;q=0.8,en;q=0.7"},
+            )
+            page = ctx.new_page()
+
+            # Navigate to the target URL.
+            page.goto(url, wait_until="domcontentloaded", timeout=self.config.timeout_seconds * 1000)
+            page.wait_for_timeout(random.randint(1500, 3000))
+
+            # Accept cookie banners that can otherwise hide real content (best-effort).
+            self._handle_cookie_consent(page)
+
+            # Wait for the page to settle (networkidle is best-effort; many sites never idle).
+            try:
+                page.wait_for_load_state("networkidle", timeout=self.config.timeout_seconds * 1000)
+            except Exception:
+                pass
+
+            # Block / captcha / Cloudflare Turnstile interstitial.
+            if self._detect_content_block(page) or self._detect_captcha(page):
+                return _failure("Page is blocked by captcha / Cloudflare (turnstile)", "blocked")
+
+            html_content = page.content()
+            parsed = self._parse_with_trafilatura(html_content, url)
+            text_content = (parsed.get("text") or "").strip()
+            title = (parsed.get("title") or "").strip()
+
+            # Trafilatura sometimes returns empty for JS-heavy pages; keep the raw HTML so callers
+            # can still recover something, but mark failure when there is no usable text at all.
+            if len(text_content) < 50 and not title:
+                logger.warning(f"[GRACE:ERROR_content_fallback] No usable content extracted from {url}")
+                return _failure("No usable content extracted from page", "empty")
+
+            logger.info(
+                f"[GRACE:EXIT_content_fallback] Extracted {len(text_content)} chars from {url}"
+            )
+            return BrowserScrapeResult(
+                source="cloakbrowser",
+                raw_html=html_content,
+                parsed_content={
+                    "title": title,
+                    "description": (parsed.get("description") or "").strip(),
+                    "text": text_content,
+                },
+                cache_key=cache_key,
+                metadata={
+                    "engine": "cloakbrowser",
+                    "mode": "content",
+                    "url": url,
+                    "headless": headless,
+                },
+                success=True,
+            )
+
+        except TimeoutError:
+            logger.error(f"[GRACE:ERROR_content_fallback] Timeout loading {url}")
+            return _failure("Timeout loading page", "timeout")
+        except TargetClosedError:
+            logger.warning(f"[GRACE:ERROR_content_fallback] Browser closed during {url} (TargetClosedError)")
+            return _failure("Browser closed during navigation (TargetClosedError)", "browser_closed")
+        except Exception as e:
+            logger.error(f"[GRACE:ERROR_content_fallback] {e}")
+            return _failure(f"Cloakbrowser content error: {e}", "error")
+        finally:
+            _close_browser_resources(page, browser)
+
+    # FUNCTION_CONTRACT: BrowserScraper.scrape_content
+    # Purpose: Scrape an arbitrary URL's content via browser automation (url_llm fallback path)
+    # Input: url (str), params (Dict[str, Any])
+    # Output: BrowserScrapeResult
+    # Side Effects: Launches browser, navigates to the URL
+    # Business Rules: Returns a no-engine failure when the browser stack is unavailable; otherwise delegates
+    #   to _execute_cloakbrowser_content
+    # Failure Modes: Returns failure result with error details
+    # LINKS: requirements.xml#UC-001
+    def scrape_content(
+        self,
+        url: str,
+        params: Dict[str, Any],
+    ) -> BrowserScrapeResult:
+        if not self.is_available():
+            return BrowserScrapeResult(
+                source="none",
+                success=False,
+                errors=[get_no_browser_engine_error()],
+            )
+
+        logger.info(f"Scraping content with cloakbrowser for URL: {url}")
+        return self._execute_cloakbrowser_content(url, params)
 
 
 # FUNCTION_CONTRACT: create_browser_scraper

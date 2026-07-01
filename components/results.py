@@ -10,7 +10,7 @@
 # Key Semantic Blocks: block_results_display_data_table, block_results_selection_checkboxes, block_results_ideas_planner, block_results_seo_generation, block_results_history_entries, block_results_keyword_handoff_select, block_results_bidirectional_chain, block_results_trends_stage_integration, block_results_math_report_render, block_results_crawl_report_render, block_results_regenerate_quality_feedback, block_results_post_ads_serp_handoff, block_results_gen_text_math_report
 # Critical Flows: pipeline execution -> results display -> keyword selection -> ideas generation -> SEO generation/Trends/SERP/Ads -> generated text math analysis -> history save; SERP/crawl results -> math profile -> math report rendering; generated text -> quality scoring -> quality report
 # Verification: python -m py_compile, python -m ruff check ., python -m pytest -q
-# CHANGE_SUMMARY: Restored top-of-file module contract metadata; added reusable keyword candidate selector and bidirectional chain buttons for staged workflows; Phase 8 Task 6: added SERP math report rendering; Phase 8 Task 7: added generation quality report rendering; Phase 8 Plan 03: added crawl math report rendering and keyword handoff controls; Phase 10 Task 9: added Trends-as-stage buttons after keyword-producing steps; Bug fix: updated FUNCTION_CONTRACT for _scroll_to_top_markup to reference st.html() instead of st.markdown (script execution in st.html enables the scroll-to-top button to appear); Bug fix: inject markup via st.html(..., unsafe_allow_javascript=True) so the scroll-to-top script executes and the button becomes visible; Bug fix: target Streamlit 1.58's real scroll container (section[data-testid="stMain"]) for both the visibility poll and the click handler — the 1s fallback previously queried .main/stAppViewContainer (not scrollable) and flickered .is-visible off; bind the click via addEventListener (st.html strips inline onclick), so clicking the button actually scrolls to the top.
+# CHANGE_SUMMARY: Restored top-of-file module contract metadata; added reusable keyword candidate selector and bidirectional chain buttons for staged workflows; Phase 8 Task 6: added SERP math report rendering; Phase 8 Task 7: added generation quality report rendering; Phase 8 Plan 03: added crawl math report rendering and keyword handoff controls; Phase 10 Task 9: added Trends-as-stage buttons after keyword-producing steps; Bug fix: updated the function-contract block for _scroll_to_top_markup to reference st.html() instead of st.markdown (script execution in st.html enables the scroll-to-top button to appear); Bug fix: inject markup via st.html(..., unsafe_allow_javascript=True) so the scroll-to-top script executes and the button becomes visible; Bug fix: target Streamlit 1.58's real scroll container (section[data-testid="stMain"]) for both the visibility poll and the click handler — the 1s fallback previously queried .main/stAppViewContainer (not scrollable) and flickered .is-visible off; bind the click via addEventListener (st.html strips inline onclick), so clicking the button actually scrolls to the top.
 
 import hashlib
 import io
@@ -57,6 +57,31 @@ _BM25F_DISPLAY_COLUMN_KEYS = {
     "Field Contributions": "seo_math_bm25f_field_contributions_column",
     "Matched Terms": "seo_math_bm25f_matched_terms_column",
 }
+
+
+def _term_total_words(item: Any) -> int:
+    return int(getattr(item, "total_word_count", 0) or 0)
+
+
+def _term_density_pct(item: Any) -> float:
+    return round(float(getattr(item, "density_pct", 0.0) or 0.0), 4)
+
+
+def _total_words_column() -> str:
+    return t("seo_math_total_words_label")
+
+
+def _density_pct_column() -> str:
+    return t("seo_math_density_pct_label")
+
+
+def _render_math_corpus_summary(profile: Dict[str, Any]) -> None:
+    total_words = int(profile.get("total_word_count", 0) or 0)
+    if total_words <= 0:
+        return
+    col1, = st.columns(1)
+    with col1:
+        st.metric(t("seo_math_total_words_label"), f"{total_words:,}")
 
 
 def _render_section_header(title: str, description: str, divider: str) -> None:
@@ -1503,13 +1528,13 @@ def render_seo_generation(
         st.rerun()
 # FUNCTION_CONTRACT: render_seo_results
 # Purpose: Render generated SEO texts with table preview, exports, and regenerate button
-# Input: auto_save_excel (bool)
+# Input: auto_save_excel (bool), show_scraped_text (bool) — when True, include raw scraped text as a "Page Content" export column
 # Output: None
 # Side Effects: May set seo_force_regenerate in session state and trigger st.rerun()
-# Business Rules: Regenerate bypasses cache/history for fresh LLM generation; clears force flag on each render
+# Business Rules: Regenerate bypasses cache/history for fresh LLM generation; clears force flag on each render; "Page Content" export column is gated by show_scraped_text (mirrors the on-screen scraping preview toggle)
 # Failure Modes: Returns silently when no generated texts exist
 # LINKS: requirements.xml#UC-001
-def render_seo_results(auto_save_excel: bool) -> None:
+def render_seo_results(auto_save_excel: bool, show_scraped_text: bool = True) -> None:
     if st.session_state.generated_seo_texts is None:
         return
 
@@ -1518,9 +1543,10 @@ def render_seo_results(auto_save_excel: bool) -> None:
     gen_df: pd.DataFrame = st.session_state.generated_seo_texts
 
     gen_df_export: pd.DataFrame = gen_df.copy()
-    gen_df_export["Page Content"] = gen_df_export["URL"].map(
-        lambda u: st.session_state.scraped_content.get(u, "")
-    )
+    if show_scraped_text:
+        gen_df_export["Page Content"] = gen_df_export["URL"].map(
+            lambda u: st.session_state.scraped_content.get(u, "")
+        )
 
     _render_table_preview_with_exports(
         df=gen_df_export,
@@ -2517,15 +2543,15 @@ def render_keyword_candidate_selector_with_sources(
 
     _render_section_header(title, t("candidate_selector_desc"), "blue")
 
+    # Button on_click callback. Streamlit forbids assigning to a widget's
+    # session-state key after the widget is instantiated in the same script run,
+    # so all widget-key writes (auto-select checkbox, clear the textarea) must
+    # live here вЂ” on_click fires at the start of the next run, before any widget
+    # is re-instantiated, which is the only safe place to mutate widget state.
+    #
+    # The textarea holds one or several keywords, one per line. Each non-empty
+    # line becomes its own candidate.
     def _on_add_manual_keyword() -> None:
-        """Button on_click callback. Streamlit forbids assigning to a widget's
-        session-state key after the widget is instantiated in the same script run,
-        so all widget-key writes (auto-select checkbox, clear the textarea) must
-        live here вЂ” on_click fires at the start of the next run, before any widget
-        is re-instantiated, which is the only safe place to mutate widget state.
-
-        The textarea holds one or several keywords, one per line. Each non-empty
-        line becomes its own candidate."""
         typed = str(st.session_state.get(manual_input_key, "") or "")
         if not typed.strip():
             return
@@ -3444,14 +3470,19 @@ def _build_math_analysis_export_sheets(
                     "Count": getattr(item, "raw_count", 0),
                     "Weighted Count": round(float(getattr(item, "weighted_count", 0.0)), 4),
                     "DF": getattr(item, "doc_frequency", 0),
+                    "Total Words": _term_total_words(item),
+                    "Density %": _term_density_pct(item),
                 }
             )
 
     tfidf_rows = [
         {
             "Term": getattr(term, "term", ""),
+            "Count": getattr(term, "raw_count", 0),
             "TF-IDF": round(float(getattr(term, "tfidf", 0.0)), 4),
             "DF": getattr(term, "doc_frequency", 0),
+            "Total Words": _term_total_words(term),
+            "Density %": _term_density_pct(term),
         }
         for term in profile.get("tfidf_terms", []) or []
     ]
@@ -3462,6 +3493,8 @@ def _build_math_analysis_export_sheets(
             "Count": getattr(term, "cooccurrence_count", 0),
             "Jaccard": round(float(getattr(term, "jaccard_similarity", 0.0)), 4),
             "Context Terms": ", ".join(getattr(term, "context_terms", []) or []),
+            "Total Words": _term_total_words(term),
+            "Density %": _term_density_pct(term),
         }
         for term in profile.get("cooccurrence_terms", []) or []
     ]
@@ -3496,15 +3529,15 @@ def _build_math_analysis_export_sheets(
     sheets = {
         "N-Grams": pd.DataFrame(
             ngram_rows,
-            columns=["Gram Size", "N-Gram", "Count", "Weighted Count", "DF"],
+            columns=["Gram Size", "N-Gram", "Count", "Weighted Count", "DF", "Total Words", "Density %"],
         ),
         "TF-IDF Terms": pd.DataFrame(
             tfidf_rows,
-            columns=["Term", "TF-IDF", "DF"],
+            columns=["Term", "Count", "TF-IDF", "DF", "Total Words", "Density %"],
         ),
         "Co-occurrence": pd.DataFrame(
             cooccurrence_rows,
-            columns=["Term", "Count", "Jaccard", "Context Terms"],
+            columns=["Term", "Count", "Jaccard", "Context Terms", "Total Words", "Density %"],
         ),
         "BM25F Scores": _build_bm25f_scores_df(profile.get("bm25f_scores", [])),
         "Intent": pd.DataFrame(
@@ -3740,55 +3773,94 @@ def render_serp_math_report(
                 with tab:
                     ngrams = ngrams_by_size[n]
                     if ngrams:
-                        for ngram in ngrams:
-                            col1, col2, col3 = st.columns([3, 2, 2])
-                            with col1:
-                                st.write(f"**{ngram.ngram}**")
-                            with col2:
-                                st.write(f"Count: {ngram.raw_count}")
-                            with col3:
-                                st.write(f"DF: {ngram.doc_frequency}")
+                        ngram_df = pd.DataFrame(
+                            [
+                                {
+                                    t("seo_math_ngram_label"): ng.ngram,
+                                    t("seo_math_count_label"): ng.raw_count,
+                                    _total_words_column(): _term_total_words(ng),
+                                    _density_pct_column(): _term_density_pct(ng),
+                                    t("seo_math_df_label"): ng.doc_frequency,
+                                }
+                                for ng in ngrams
+                            ]
+                        )
+                        st.dataframe(ngram_df, use_container_width=True, hide_index=True)
                     else:
                         st.write(f"No {n}-grams found.")
 
     # Display TF-IDF terms
     tfidf_terms = profile.get("tfidf_terms", [])
     selection_prefix = "math_tfidf_select"
+    select_col_name = t("seo_math_select_column")
 
     if tfidf_terms:
         _render_section_header(t("seo_math_tfidf_header"), t("seo_math_tfidf_desc"), "blue")
 
-        # Create selectable checkbox list
-        selected_tfidf = []
+        # Rich table + merged Select column (st.data_editor) for handoff selection
+        tfidf_df = pd.DataFrame(
+            [
+                {
+                    "Term": term.term,
+                    "Count": getattr(term, "raw_count", 0),
+                    _total_words_column(): _term_total_words(term),
+                    _density_pct_column(): _term_density_pct(term),
+                    "TF-IDF": round(term.tfidf, 4),
+                    "TF": round(term.raw_tf, 4),
+                    "IDF": round(term.idf, 4),
+                    "DF": term.doc_frequency,
+                    select_col_name: False,
+                }
+                for term in tfidf_terms
+            ]
+        )
 
-        for i, term in enumerate(tfidf_terms):
-            checkbox_key = f"{selection_prefix}::{i}"
-            is_checked = st.checkbox(
-                term.term,
-                value=False,
-                key=checkbox_key,
-                help=f"TF-IDF: {term.tfidf:.3f} | DF: {term.doc_frequency}",
-            )
-            if is_checked:
-                selected_tfidf.append(term.term)
+        edited_tfidf = st.data_editor(
+            tfidf_df,
+            use_container_width=True,
+            hide_index=True,
+            disabled=[
+                "Term",
+                "Count",
+                _total_words_column(),
+                _density_pct_column(),
+                "TF-IDF",
+                "TF",
+                "IDF",
+                "DF",
+            ],
+            column_config={
+                select_col_name: st.column_config.CheckboxColumn(
+                    select_col_name,
+                    default=False,
+                    help=t("seo_math_select_column_help"),
+                )
+            },
+            key=f"{selection_prefix}_editor",
+        )
 
-        # Store selected terms for handoff
-        if selected_tfidf:
-            st.session_state[f"{selection_prefix}_selected"] = selected_tfidf
+        # Extract checked terms and store for handoff
+        selected_tfidf = edited_tfidf.loc[edited_tfidf[select_col_name], "Term"].tolist()
+        st.session_state[f"{selection_prefix}_selected"] = selected_tfidf
 
     # Display co-occurrence terms
     cooccurrence_terms = profile.get("cooccurrence_terms", [])
     if cooccurrence_terms:
         _render_section_header(t("seo_math_cooccurrence_header"), t("seo_math_cooccurrence_desc"), "green")
 
-        for term in cooccurrence_terms:
-            col1, col2, col3 = st.columns([3, 2, 2])
-            with col1:
-                st.write(f"**{term.term}**")
-            with col2:
-                st.write(f"Count: {term.cooccurrence_count}")
-            with col3:
-                st.write(f"Jaccard: {term.jaccard_similarity:.2f}")
+        cooccur_df = pd.DataFrame(
+            [
+                {
+                    "Term": term.term,
+                    t("seo_math_count_label"): term.cooccurrence_count,
+                    _total_words_column(): _term_total_words(term),
+                    _density_pct_column(): _term_density_pct(term),
+                    t("seo_math_jaccard_label"): round(term.jaccard_similarity, 4),
+                }
+                for term in cooccurrence_terms
+            ]
+        )
+        st.dataframe(cooccur_df, use_container_width=True, hide_index=True)
 
     _render_bm25f_scores_section(profile)
 
@@ -3954,6 +4026,7 @@ def render_crawl_math_report(
             st.metric(t("crawl_errors_stat"), len(errors))
 
     aggregate_profile = report.get("aggregate_profile", {})
+    _render_math_corpus_summary(aggregate_profile)
     tfidf_terms = aggregate_profile.get("tfidf_terms", [])
     ngrams_by_size = aggregate_profile.get("ngrams_by_size", {})
 
@@ -3963,6 +4036,9 @@ def render_crawl_math_report(
             [
                 {
                     "Term": term.term,
+                    "Count": getattr(term, "raw_count", 0),
+                    _total_words_column(): _term_total_words(term),
+                    _density_pct_column(): _term_density_pct(term),
                     "TF-IDF": round(term.tfidf, 4),
                     "DF": term.doc_frequency,
                 }
@@ -3988,6 +4064,8 @@ def render_crawl_math_report(
                             {
                                 "N-gram": item.ngram,
                                 "Count": item.raw_count,
+                                _total_words_column(): _term_total_words(item),
+                                _density_pct_column(): _term_density_pct(item),
                                 "Weighted": round(item.weighted_count, 2),
                                 "DF": item.doc_frequency,
                             }
@@ -4198,6 +4276,7 @@ def render_generation_quality_report(
         return
 
     from utils.seo_math_analysis import score_generated_text
+    from config.settings import SEO_MATH_CONFIG
 
     # Build serp profile for scoring
     scoring_profile = {
@@ -4209,8 +4288,16 @@ def render_generation_quality_report(
         "meta_title": "",
     }
 
-    # Score generated text
-    scores = score_generated_text(generated_text, primary_keyword, scoring_profile)
+    # Score generated text. strip_suffixes makes the keyword-density check lemmatize
+    # the keyword and text so inflected forms count toward the lemma, mirroring the
+    # lemmatized SERP profile the generated text is scored against.
+    scores = score_generated_text(
+        generated_text,
+        primary_keyword,
+        scoring_profile,
+        enable_bm25f=SEO_MATH_CONFIG.get("analyze_bm25f", False),
+        strip_suffixes=SEO_MATH_CONFIG.get("strip_suffixes", False),
+    )
 
     _render_section_header(t("generation_quality_report"), t("generation_quality_report_desc"), "orange")
 
@@ -4367,6 +4454,7 @@ def render_generated_text_math_report() -> None:
     st.caption(t("gen_math_corpus_source"))
 
     # Aggregate section
+    _render_math_corpus_summary(profile)
     _render_gen_math_aggregate(profile)
 
     # Per-row section — shows metadata summary only; full analysis is in the aggregate above
@@ -4386,8 +4474,38 @@ def render_generated_text_math_report() -> None:
                     _render_gen_math_row_summary(row_profile)
 
 
-def _render_gen_math_aggregate(profile: Dict[str, Any]) -> None:
-    """Render aggregate math analysis sections from a profile dict."""
+# Render aggregate math analysis sections from a profile dict.
+def render_scraped_text_math_report(
+    config_override: Optional[Dict[str, Any]] = None,
+) -> None:
+    from config.settings import SEO_MATH_CONFIG
+
+    config = {**SEO_MATH_CONFIG, **(config_override or {})}
+    if not config.get("enabled", False):
+        return
+    if not config.get("analyze_scraped_text", False):
+        return
+
+    scraped_content = st.session_state.get("scraped_content") or {}
+    if not scraped_content:
+        return
+
+    from utils.pipeline import build_scraped_text_math_profile
+
+    profile = build_scraped_text_math_profile(scraped_content, config_override=config)
+    if profile.get("info_message") and not profile.get("total_rows"):
+        return
+
+    _render_section_header(t("scraped_math_report_header"), t("scraped_math_report_desc"), "green")
+    st.caption(t("scraped_math_corpus_source"))
+    _render_math_corpus_summary(profile)
+    _render_gen_math_aggregate(profile, file_prefix="scraped_text_math_report_export")
+
+
+def _render_gen_math_aggregate(
+    profile: Dict[str, Any],
+    file_prefix: str = "gen_text_math_report_export",
+) -> None:
     tfidf_terms = profile.get("tfidf_terms", [])
     ngrams_by_size = profile.get("ngrams_by_size", {})
     cooccurrence_terms = profile.get("cooccurrence_terms", [])
@@ -4403,6 +4521,8 @@ def _render_gen_math_aggregate(profile: Dict[str, Any]) -> None:
                     {
                         "N-gram": ng.ngram,
                         "Count": ng.raw_count,
+                        _total_words_column(): _term_total_words(ng),
+                        _density_pct_column(): _term_density_pct(ng),
                         "Weighted": round(ng.weighted_count, 2),
                         "DF": ng.doc_frequency,
                     }
@@ -4418,6 +4538,9 @@ def _render_gen_math_aggregate(profile: Dict[str, Any]) -> None:
         df = pd.DataFrame([
             {
                 "Term": term.term,
+                "Count": getattr(term, "raw_count", 0),
+                _total_words_column(): _term_total_words(term),
+                _density_pct_column(): _term_density_pct(term),
                 "TF-IDF": round(term.tfidf, 4),
                 "TF": round(term.raw_tf, 4),
                 "IDF": round(term.idf, 4),
@@ -4434,15 +4557,13 @@ def _render_gen_math_aggregate(profile: Dict[str, Any]) -> None:
             {
                 "Term": ct.term,
                 "Co-occurrence": ct.cooccurrence_count,
+                _total_words_column(): _term_total_words(ct),
+                _density_pct_column(): _term_density_pct(ct),
                 "Jaccard": round(ct.jaccard_similarity, 4),
             }
             for ct in cooccurrence_terms
         ])
         st.dataframe(df, use_container_width=True, hide_index=True)
-
-    # Intent
-    if intent:
-        _render_gen_math_intent(intent)
 
     # BM25F
     bm25f_scores = profile.get("bm25f_scores", [])
@@ -4452,16 +4573,21 @@ def _render_gen_math_aggregate(profile: Dict[str, Any]) -> None:
             header_key="seo_math_bm25f_scores_header",
         )
 
+    # Intent (after BM25F, with header — matches SERP math report layout)
+    if intent:
+        _render_section_header(t("seo_math_intent_header"), t("seo_math_intent_desc"), "orange")
+        _render_gen_math_intent(intent)
+
     # Export
     if tfidf_terms or ngrams_by_size or cooccurrence_terms:
         _render_math_analysis_export_button(
             profile=profile,
-            file_prefix="gen_text_math_report_export",
+            file_prefix=file_prefix,
         )
 
 
+# Render a lightweight summary for a single per-row profile — avoids duplicating the full aggregate.
 def _render_gen_math_row_summary(row_profile: Dict[str, Any]) -> None:
-    """Render a lightweight summary for a single per-row profile — avoids duplicating the full aggregate."""
     ngrams_by_size = row_profile.get("ngrams_by_size", {})
     tfidf_terms = row_profile.get("tfidf_terms", [])
     intent = row_profile.get("intent")
@@ -4489,8 +4615,8 @@ def _render_gen_math_row_summary(row_profile: Dict[str, Any]) -> None:
         st.caption(f"**{t('seo_math_intent_type')}**: {intent_label} ({confidence:.0%})")
 
 
+# Render intent analysis block for generated text math report.
 def _render_gen_math_intent(intent) -> None:
-    """Render intent analysis block for generated text math report."""
     intent_type = intent.intent_type if hasattr(intent, "intent_type") else "undetermined"
     confidence = intent.confidence if hasattr(intent, "confidence") else 0.0
     score = intent.score if hasattr(intent, "score") else 0.0

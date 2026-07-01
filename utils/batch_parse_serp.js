@@ -114,9 +114,6 @@
 
     // Shipping info patterns
     shipping:       /(Безкоштовна доставка|Вартість доставки[^\n]*?)(?=\s*·|$)/i,
-
-    // Domain extraction from URL
-    domainExtract:  /(https?:\/\/)?([\w.-]+\.[\w]{2,})/,
   };
 
   // SEMANTIC_BLOCK: block_serp_parse_items
@@ -236,16 +233,17 @@
     const sm = fullText.match(RE.shipping);
     if (sm) rs.shipping = $(sm[0]);
 
-    // DOMAIN + BREADCRUMB: Extract from cite element
+    // BREADCRUMB ONLY: Google's <cite> shows the result URL as a breadcrumb path
+    // (e.g. "www.mobile.kiev.ua › catalog › phones"). We expose that display text
+    // as the breadcrumb. The per-result DOMAIN is NOT extracted here — the Python
+    // side derives it correctly from the result URL via the Public Suffix List
+    // (utils.domain.registrable_domain), which handles multi-label zones (kiev.ua,
+    // com.ua, ...) that a host.tld regex cannot. Only a leading scheme is stripped;
+    // the host segment is preserved as Google displays it.
     const cite = box.querySelector('cite');
     if (cite) {
-      const ct = $(cite.textContent);
-      const dm = ct.match(RE.domainExtract);
-      if (dm) {
-        rs.domain = dm[2];
-        const bc = ct.replace(/https?:\/\/[^\s]+\s*/, '');
-        if (bc && bc !== dm[2]) rs.breadcrumb = $(bc);
-      }
+      const ct = $(cite.textContent).replace(/^https?:\/\//, '');
+      if (ct) rs.breadcrumb = ct;
     }
 
     return { title, url, snippet, rich_snippet: rs };

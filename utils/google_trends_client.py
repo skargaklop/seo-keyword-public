@@ -5,7 +5,7 @@
 # Rationale: Commercial API adapters provide reliable keyword interest data without reverse engineering
 # Dependencies: typing, dataclasses, datetime, json, time, hashlib, requests, config.settings, utils.logger
 # Exports: GoogleTrendsClient, GoogleTrendsRequest, GoogleTrendsResult, GoogleTrendsError, GoogleTrendsFailure, GoogleTrendsInterestPoint, GoogleTrendsRelatedItem, GoogleTrendsRegionRow, create_google_trends_client
-# LINKS: requirements.xml#UC-010, .planning/phases/10-bm25f-history-cache-google-trends/10-CONTEXT.md, verification-plan.xml#V-MOD-010
+# LINKS: requirements.xml#UC-010, .planning/phases/10-bm25f-history-cache-google-trends/10-CONTEXT.md, verification-plan.xml#V-MOD-010, knowledge-graph.xml#MOD-015, verification-plan.xml#V-17-SEMRUSH-NO-TRENDS
 # MODULE_MAP: utils/google_trends_client.py
 # Public Functions: create_google_trends_client, GoogleTrendsClient.get_trends
 # Private Helpers: _normalize_text, _normalize_keywords, _canonical_json, _first_numeric, _safe_round_value, _strip_anti_xssi, _parse_timeline, _parse_related, _parse_region, _merge_interest_points, _calculate_averages, _dedupe_related, _dedupe_regions, _extract_widgets
@@ -1113,7 +1113,6 @@ class GoogleTrendsClient:
     # Purpose: get trends implementation
     # Purpose: get trends implementation
     def get_trends(self, request: GoogleTrendsRequest) -> GoogleTrendsResult:
-        """Fetch Google Trends data via the active adapter."""
         caps = getattr(self.active_adapter, "capabilities", None) if self.active_adapter else None
         adapter_max = (
             getattr(caps, "max_keywords_per_request", MAX_BATCH_SIZE) if caps else MAX_BATCH_SIZE

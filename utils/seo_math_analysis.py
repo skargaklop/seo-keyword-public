@@ -10,7 +10,7 @@
 # Key Semantic Blocks: block_math_tokenize_corpus, block_math_ngram_rank, block_math_tfidf_score, block_math_bm25f_scoring, block_math_cooccurrence_terms, block_math_generation_quality, block_math_cache_memoization, block_math_lemmatizer_dependency_check
 # Critical Flows: SERP results -> tokenization -> n-gram/TF-IDF/BM25F/cooccurrence analysis -> intent/gap scoring; Generated text -> parsing -> element-specific quality scoring with optional BM25F coverage
 # Verification: python -m py_compile, python -m ruff check ., python -m pytest -q
-# CHANGE_SUMMARY: Initial module with deterministic mathematical analysis; pure Python implementation with memoization; no external ML dependencies; Phase 10: added BM25F with BM25+ IDF smoothing (+1 term); Inverted _stem_matches so strip_suffixes=True is the BROAD mode (real lemmatization) and False is the STRICT mode (exact equality); replaced regex suffix hack with lazy pymorphy3/simplemma lemmatizer (optional deps, lazy-loaded, graceful identity fallback); added LemmatizerDependencyStatus + check_lemmatizer_dependencies/build_lemmatizer_install_command/get_lemmatizer_problem_dependencies for the UI dependency table under the lemmatization checkbox
+# CHANGE_SUMMARY: Initial module with deterministic mathematical analysis; pure Python implementation with memoization; no external ML dependencies; Phase 10: added BM25F with BM25+ IDF smoothing (+1 term); Inverted _stem_matches so strip_suffixes=True is the BROAD mode (real lemmatization) and False is the STRICT mode (exact equality); replaced regex suffix hack with lazy pymorphy3/simplemma lemmatizer (optional deps, lazy-loaded, graceful identity fallback); added LemmatizerDependencyStatus + check_lemmatizer_dependencies/build_lemmatizer_install_command/get_lemmatizer_problem_dependencies for the UI dependency table under the lemmatization checkbox; closed the lemmatization gap in co-occurrence — _build_cooccurrence_matrix now accepts strip_suffixes and compute_cooccurrence_terms threads it through, so inflected forms collapse onto one lemma row like n-grams/TF-IDF/intent/BM25F (previously the flag was a dead parameter); closed the lemmatization gaps in the generated-text scorer — _calculate_keyword_density and score_generated_text now accept strip_suffixes and thread it into the keyword-density check and BM25F coverage so inflected generated text matches the lemmatized SERP query terms (previously hardcoded False); components/results.py render_generation_quality_report passes SEO_MATH_CONFIG strip_suffixes + analyze_bm25f through to score_generated_text; closed the remaining lemmatization gap in _score_element — added _lemmatized_contains (lemma-token containment that is a raw .lower() substring in STRICT mode and a lemma subsequence match in BROAD mode) and wired all six keyword-presence / n-gram coverage substring checks through it so inflected generated elements match lemma-form SERP keywords/n-grams when strip_suffixes is on, with raw matching preserved when it is off
 
 from __future__ import annotations
 
@@ -112,6 +112,12 @@ def _strip_ru_uk_suffix(token: str) -> str:
             return token[:-len(suffix)]
 
     return token
+
+
+# Count the total analyzable tokens across a corpus (used for density_pct denominators).
+def _count_corpus_tokens(corpus: List[TextSource], strip_suffixes: bool = False) -> int:
+    stopwords = _get_default_stopwords()
+    return sum(len(_tokenize_text(source.text, strip_suffixes, stopwords)) for source in corpus)
 
 
 # FUNCTION_CONTRACT: _is_cyrillic
@@ -735,6 +741,7 @@ def extract_ngrams(
     if not corpus:
         return []
 
+    total_word_count = _count_corpus_tokens(corpus, strip_suffixes)
     stopwords = _get_default_stopwords()
     ngram_counts: Dict[str, int] = defaultdict(int)
     weighted_counts: Dict[str, float] = defaultdict(float)
@@ -744,13 +751,16 @@ def extract_ngrams(
     for doc_idx, source in enumerate(corpus):
         tokens = _tokenize_text(source.text, strip_suffixes, stopwords)
 
-        # Generate n-grams
+        # Count each distinct n-gram ONCE per document: tally every window position
+        # into a per-doc counter, then fold that into the global aggregates. (Previously
+        # this recomputed the full per-doc occurrence count at every matching window
+        # position, multiplying raw_count by the occurrence count — a double-count bug.)
+        doc_ngram_counts: Dict[str, int] = defaultdict(int)
         for i in range(len(tokens) - n + 1):
             ngram = " ".join(tokens[i:i + n])
+            doc_ngram_counts[ngram] += 1
 
-            # Count occurrences in this document
-            doc_count = sum(1 for j in range(len(tokens) - n + 1) if " ".join(tokens[j:j + n]) == ngram)
-
+        for ngram, doc_count in doc_ngram_counts.items():
             ngram_counts[ngram] += doc_count
             weighted_counts[ngram] += doc_count * source.weight
             doc_frequencies[ngram].add(doc_idx)
@@ -771,6 +781,9 @@ def extract_ngrams(
             weighted_count=weighted_counts[ngram],
             doc_frequency=df,
             sources=dict(source_breakdown[ngram]),
+            total_word_count=total_word_count,
+            density_pct=round(raw_count / total_word_count * 100, 4)
+            if total_word_count else 0.0,
         ))
 
     # Sort: weighted_count desc, then ngram asc for stability
@@ -787,14 +800,15 @@ def extract_ngrams(
 # Purpose: Compute TF-IDF scores for terms in SERP corpus with small-corpus smoothing
 # Input: corpus (List[TextSource])
 # Output: List[TfidfTermScore]
-# Side Effects: Uses memoization cache keyed by corpus hash
-# Business Rules: Uses formula tf(t,d) = count(t,d) / total_terms(d); idf(t) = log((N+1)/(df+1)) + 1; filters by df >= 2
+# Side Effects: Uses memoization cache keyed by corpus hash + min_df
+# Business Rules: Uses formula tf(t,d) = count(t,d) / total_terms(d); idf(t) = log((N+1)/(df+1)) + 1; filters by df >= min_df
 # Failure Modes: Returns empty list for empty corpus; never raises
 # LINKS: PLAN 08-02 Task 2
 @functools.lru_cache(maxsize=128)
 def compute_tfidf(
     corpus_hash: tuple[tuple[str, str, float], ...],
     strip_suffixes: bool = False,
+    min_df: int = 1,
 ) -> List[TfidfTermScore]:
     """Compute TF-IDF scores for terms in corpus.
 
@@ -806,6 +820,10 @@ def compute_tfidf(
     Args:
         corpus_hash: Hashable representation of TextSource corpus
         strip_suffixes: Whether to apply suffix stripping
+        min_df: Minimum document frequency for a term to be retained. Defaults to 1
+            so analysis ALWAYS runs when enabled — even for a single-document corpus
+            (the scraped-text / url_llm_ads path feeds one document). Raise to 2 for
+            large SERP corpora where cross-document recurrence is the signal.
 
     Returns:
         List of TfidfTermScore sorted by tfidf desc, term asc
@@ -817,6 +835,7 @@ def compute_tfidf(
         return []
 
     N = len(corpus)
+    total_word_count = _count_corpus_tokens(corpus, strip_suffixes)
     stopwords = _get_default_stopwords()
 
     # Compute term frequencies per document
@@ -834,6 +853,9 @@ def compute_tfidf(
 
     # Compute aggregated TF-IDF with source weighting
     term_scores: Dict[str, TfidfTermScore] = {}
+    aggregate_counts: Counter = Counter()
+    for tokens in doc_terms:
+        aggregate_counts.update(tokens)
 
     for doc_idx, (tokens, source) in enumerate(zip(doc_terms, corpus)):
         if not tokens:
@@ -845,8 +867,10 @@ def compute_tfidf(
         for term, count in term_counts.items():
             df = doc_freq.get(term, 0)
 
-            # Skip terms appearing in only one document (low signal)
-            if df < 2:
+            # Skip terms below the minimum document frequency. min_df defaults to 1 so
+            # the analysis always runs (single-document corpora are not zeroed out);
+            # callers wanting only cross-document signals pass min_df=2.
+            if df < min_df:
                 continue
 
             # TF-IDF calculation
@@ -862,6 +886,12 @@ def compute_tfidf(
                     raw_tf=tf,
                     idf=idf,
                     doc_frequency=df,
+                    raw_count=aggregate_counts.get(term, 0),
+                    total_word_count=total_word_count,
+                    density_pct=round(
+                        aggregate_counts.get(term, 0) / total_word_count * 100,
+                        4,
+                    ) if total_word_count else 0.0,
                 )
 
             term_scores[term].tfidf += tfidf * source.weight
@@ -879,16 +909,17 @@ def compute_tfidf(
 
 # FUNCTION_CONTRACT: _build_cooccurrence_matrix
 # Purpose: Build term co-occurrence matrix from corpus within sliding window
-# Input: corpus (List[TextSource]), window (int), stopwords (Set[str])
+# Input: corpus (List[TextSource]), window (int), stopwords (Set[str]), strip_suffixes (bool)
 # Output: Dict[str, Counter]
 # Side Effects: (none)
-# Business Rules: Tracks term pairs appearing within window distance
+# Business Rules: Tracks term pairs appearing within window distance; when strip_suffixes=True each token is lemmatized by _tokenize_text first so inflected forms collapse onto one lemma row
 # Failure Modes: Returns empty dict for empty corpus; never raises
 # LINKS: PLAN 08-02 Task 3
 def _build_cooccurrence_matrix(
     corpus: List[TextSource],
     window: int = 5,
     stopwords: Optional[Set[str]] = None,
+    strip_suffixes: bool = False,
 ) -> Dict[str, Counter]:
     """Build co-occurrence matrix from corpus.
 
@@ -900,7 +931,7 @@ def _build_cooccurrence_matrix(
     cooccurrence: Dict[str, Counter] = defaultdict(Counter)
 
     for source in corpus:
-        tokens = _tokenize_text(source.text, False, stopwords)
+        tokens = _tokenize_text(source.text, strip_suffixes, stopwords)
 
         # Build sliding window co-occurrence
         for i, term in enumerate(tokens):
@@ -966,7 +997,8 @@ def compute_cooccurrence_terms(
         return []
 
     stopwords = _get_default_stopwords()
-    cooccurrence = _build_cooccurrence_matrix(corpus, window, stopwords)
+    cooccurrence = _build_cooccurrence_matrix(corpus, window, stopwords, strip_suffixes)
+    total_word_count = _count_corpus_tokens(corpus, strip_suffixes)
 
     # Find co-occurrences for each seed term
     seed_term_set = set(term.lower() for term in seed_terms)
@@ -995,9 +1027,14 @@ def compute_cooccurrence_terms(
                     cooccurrence_count=0,
                     jaccard_similarity=0.0,
                     context_terms=[],
+                    total_word_count=total_word_count,
                 )
 
             results[other_term].cooccurrence_count += count
+            results[other_term].density_pct = round(
+                results[other_term].cooccurrence_count / total_word_count * 100,
+                4,
+            ) if total_word_count else 0.0
             results[other_term].jaccard_similarity = max(
                 results[other_term].jaccard_similarity,
                 jaccard
@@ -1265,19 +1302,29 @@ def analyze_intent(
                 mark_signal("navigational", f"nav:{signal}", weight)
 
         cyrillic_tokens = {token for token in token_set if re.search("[\u0430-\u044f\u0456\u0457\u0454\u0491]", token)}
-        # Intent morphology toggle (INVERTED from naive intuition):
-        #  - strip_suffixes=True  (ENABLED)  = BROAD/permissive: lemmatize the token
-        #    then prefix-match the lemma, so inflected forms collapse onto a stem
-        #    (\u043a\u0443\u043f\u0438\u0442\u044c = \u043a\u0443\u043f\u0438\u043b = \u043a\u0443\u043f\u043b\u044e -> all match stem "\u043a\u0443\u043f"). When enabled the token
-        #    is already lemmatized by _tokenize_text, so lemmatize_token is idempotent
-        #    here; calling it again keeps the matcher self-contained.
-        #  - strip_suffixes=False (DISABLED) = STRICT: exact equality token == stem,
-        #    no morphology collapsing at all (\u043a\u0443\u043f\u0438\u0442\u044c != \u043a\u0443\u043f).
+        # The Cyrillic stem sets above are PREFIX stems ("\u043a\u0443\u043f", "\u0437\u0430\u043c\u043e\u0432",
+        # "\u0446\u0435\u043d"), not exact dictionary words \u2014 every Slavic inflection grows from them
+        # (\u043a\u0443\u043f\u0438\u0442\u0438 = \u043a\u0443\u043f\u0438\u043b = \u043a\u0443\u043f\u043b\u044e all start with "\u043a\u0443\u043f"). Matching therefore uses PREFIX
+        # matching, never exact equality (exact equality on a 3-7 char root would leave
+        # the whole UA/RU market unclassified \u2014 the documented production bug). The
+        # strip_suffixes toggle controls WHICH form is prefix-matched, making broad a
+        # strict superset:
+        #  - strip_suffixes=True  (BROAD) = lemmatize the token, then prefix-match
+        #    the lemma. Catches more (\u043f\u043e\u043a\u0443\u043f\u043a\u0430 lemmatizes to itself and matches "\u043f\u043e\u043a\u0443\u043f").
+        #    The token is already lemmatized by _tokenize_text, so lemmatize_token is
+        #    idempotent here; calling it again keeps the matcher self-contained.
+        #  - strip_suffixes=False (STRICT) = prefix-match the RAW token (token starts
+        #    with stem). No morphological collapsing, no lemmatizer dependency, but
+        #    regular inflections still register because they share the root prefix.
+        # The forward direction (token.startswith(stem)) is the only one valid for RAW
+        # tokens: the reverse (stem.startswith(token)) would let a 1-char fragment like
+        # "\u0433" match a 7-char stem "\u0433\u043e\u043b\u043e\u0432\u043d". The reverse is allowed only in BROAD mode,
+        # where the token is a lemma (controlled dictionary form), never a raw fragment.
         def _stem_matches(token: str, stem: str) -> bool:
             if strip_suffixes:
                 lemma_form = lemmatize_token(token)
                 return lemma_form.startswith(stem) or stem.startswith(lemma_form)
-            return token == stem
+            return token.startswith(stem)
         for token in cyrillic_tokens:
             for stem in informational_stems:
                 if _stem_matches(token, stem):
@@ -1567,26 +1614,68 @@ def _parse_generated_sections(generated_text: str) -> Dict[str, str]:
 
 # FUNCTION_CONTRACT: _calculate_keyword_density
 # Purpose: Calculate keyword density for a specific keyword in text
-# Input: text (str), keyword (str)
+# Input: text (str), keyword (str), strip_suffixes (bool)
 # Output: float
 # Side Effects: (none)
-# Business Rules: Density = (keyword occurrences / total words) * 100
+# Business Rules: Density = (keyword occurrences / total words) * 100; when strip_suffixes=True both the text tokens and the keyword are lemmatized so inflected forms count toward the lemma
 # Failure Modes: never raises
 # LINKS: PLAN 08-02 Task 7
-def _calculate_keyword_density(text: str, keyword: str) -> float:
+def _calculate_keyword_density(text: str, keyword: str, strip_suffixes: bool = False) -> float:
     if not text or not keyword:
         return 0.0
 
     stopwords = _get_default_stopwords()
-    tokens = _tokenize_text(text, False, stopwords)
+    tokens = _tokenize_text(text, strip_suffixes, stopwords)
 
     if not tokens:
         return 0.0
 
     keyword_lower = keyword.lower()
+    if strip_suffixes:
+        keyword_lower = lemmatize_token(keyword_lower)
     count = sum(1 for token in tokens if token == keyword_lower)
 
     return (count / len(tokens)) * 100
+
+
+# FUNCTION_CONTRACT: _lemmatized_contains
+# Purpose: Test whether a keyword/n-gram (needle) occurs in a text (haystack), respecting the lemmatization toggle so inflected generated text matches lemma-form SERP query terms
+# Input: haystack (str) — the element/generated text to search in; needle (str) — the keyword or n-gram to find; strip_suffixes (bool) — whether to collapse both sides to lemmas before matching
+# Output: bool — True if the needle is present in the haystack under the active matching mode
+# Side Effects: (none)
+# Business Rules: When strip_suffixes=False it is a plain case-insensitive substring check (STRICT mode, identical to the previous raw .lower() behavior so no scoring regression). When strip_suffixes=True (BROAD mode) BOTH the haystack and the needle are reduced to lemma tokens via the shared _tokenize_text chokepoint and lemmatize_token, then the needle's lemma-token sequence must appear as a contiguous subsequence of the haystack's lemma tokens — so "кроссовки" matches lemma "кроссовок" while "кроссовок" is NOT a raw substring of "кроссовки". When the optional lemmatizer libs are absent lemmatize_token is the identity, so this degrades gracefully to exact-token matching
+# Failure Modes: never raises; returns False for empty needle/haystack
+# LINKS: PLAN 08-02 Task 7, PLAN 10-02 Task 4
+def _lemmatized_contains(haystack: str, needle: str, strip_suffixes: bool = False) -> bool:
+    if not haystack or not needle:
+        return False
+
+    if not strip_suffixes:
+        # STRICT mode: verbatim case-insensitive substring (preserves prior behavior).
+        return needle.lower() in (haystack or "").lower()
+
+    # BROAD mode: reduce both sides to lemma tokens and require the needle's lemma
+    # sequence to appear as a contiguous run within the haystack's lemma sequence.
+    stopwords = _get_default_stopwords()
+    hay_tokens = _tokenize_text(haystack, True, stopwords)
+    needle_tokens = _tokenize_text(needle, True, stopwords)
+
+    if not needle_tokens:
+        # The needle was all stopwords/punctuation; fall back to raw substring so a
+        # meaningful-looking phrase (e.g. CTA) still matches verbatim.
+        return needle.lower() in (haystack or "").lower()
+
+    if len(needle_tokens) == 1:
+        return needle_tokens[0] in hay_tokens
+
+    # Multi-word needle: contiguous subsequence match over lemma tokens.
+    needle_len = len(needle_tokens)
+    first = needle_tokens[0]
+    for start in (i for i, tok in enumerate(hay_tokens) if tok == first):
+        if start + needle_len <= len(hay_tokens):
+            if hay_tokens[start:start + needle_len] == needle_tokens:
+                return True
+    return False
 
 
 # FUNCTION_CONTRACT: _check_forbidden_phrases
@@ -1610,10 +1699,10 @@ def _check_forbidden_phrases(text: str) -> List[str]:
 
 # FUNCTION_CONTRACT: _score_element
 # Purpose: Score a single SEO element against SERP profile using element-specific rubric
-# Input: element_type (str), element_text (str), primary_keyword (str), serp_profile (Dict), generated_text (str), top_terms_limit (int)
+# Input: element_type (str), element_text (str), primary_keyword (str), serp_profile (Dict), generated_text (str), top_terms_limit (int), strip_suffixes (bool)
 # Output: ElementQualityScore
 # Side Effects: (none)
-# Business Rules: Applies element-specific length, keyword placement, and coverage rules
+# Business Rules: Applies element-specific length, keyword placement, and coverage rules; when strip_suffixes=True the keyword-density check lemmatizes the keyword and text so inflected forms count toward the lemma
 # Failure Modes: Returns zero-scored result with issues for empty/invalid input
 # LINKS: PLAN 08-02 Task 7
 def _score_element(
@@ -1623,6 +1712,7 @@ def _score_element(
     serp_profile: Dict[str, List[str]],
     generated_text: str,
     top_terms_limit: int = 50,
+    strip_suffixes: bool = False,
 ) -> ElementQualityScore:
     """Score a single SEO element.
 
@@ -1632,6 +1722,7 @@ def _score_element(
         primary_keyword: Primary keyword to check for
         serp_profile: SERP-derived profile with top_ngrams, tfidf_terms, etc.
         generated_text: Full generated text for density checks
+        strip_suffixes: Whether to lemmatize keyword/text for the density check
 
     Returns:
         ElementQualityScore with score and issues
@@ -1650,12 +1741,12 @@ def _score_element(
             issues.append("meta_title_too_long")
             score -= 10
         # Primary keyword at start
-        if primary_keyword and primary_keyword.lower() not in (element_text or "")[:30].lower():
+        if primary_keyword and not _lemmatized_contains((element_text or "")[:30], primary_keyword, strip_suffixes):
             issues.append("meta_title_keyword_not_at_start")
             score -= 15
         # Top 3-grams coverage
         top_ngrams = serp_profile.get("top_ngrams", [])[:top_terms_limit]
-        covered_ngrams = sum(1 for ngram in top_ngrams if ngram.lower() in (element_text or "").lower())
+        covered_ngrams = sum(1 for ngram in top_ngrams if _lemmatized_contains(element_text or "", ngram, strip_suffixes))
         if covered_ngrams < 2:
             issues.append("meta_title_low_ngram_coverage")
             score -= 10
@@ -1668,7 +1759,7 @@ def _score_element(
             issues.append("meta_desc_too_long")
             score -= 10
         # Primary keyword present
-        if primary_keyword and primary_keyword.lower() not in (element_text or "").lower():
+        if primary_keyword and not _lemmatized_contains(element_text or "", primary_keyword, strip_suffixes):
             issues.append("meta_desc_missing_keyword")
             score -= 15
         # Call-to-action check
@@ -1686,7 +1777,7 @@ def _score_element(
             issues.append("h1_too_long")
             score -= 10
         # Primary keyword present
-        if primary_keyword and primary_keyword.lower() not in (element_text or "").lower():
+        if primary_keyword and not _lemmatized_contains(element_text or "", primary_keyword, strip_suffixes):
             issues.append("h1_missing_keyword")
             score -= 20
         # Should match title intent (rough check - not duplicated title)
@@ -1713,7 +1804,7 @@ def _score_element(
             issues.append("description_low_cooccurrence_coverage")
             score -= 15
         # Keyword density check
-        density = _calculate_keyword_density(generated_text, primary_keyword or "")
+        density = _calculate_keyword_density(generated_text, primary_keyword or "", strip_suffixes)
         if density > 7.0:
             issues.append("description_keyword_stuffing")
             score -= 20
@@ -1724,11 +1815,11 @@ def _score_element(
             score -= len(forbidden) * 5
 
     # Primary keyword presence check
-    primary_present = primary_keyword and primary_keyword.lower() in (element_text or "").lower()
+    primary_present = primary_keyword and _lemmatized_contains(element_text or "", primary_keyword, strip_suffixes)
 
     # Calculate coverage ratio
     top_terms = serp_profile.get("top_ngrams", [])[:top_terms_limit]
-    coverage = sum(1 for term in top_terms if term.lower() in (element_text or "").lower())
+    coverage = sum(1 for term in top_terms if _lemmatized_contains(element_text or "", term, strip_suffixes))
     keyword_coverage = coverage / len(top_terms) if top_terms else 0.0
 
     return ElementQualityScore(
@@ -1746,10 +1837,10 @@ def _score_element(
 
 # FUNCTION_CONTRACT: score_generated_text
 # Purpose: Score generated SEO text against SERP-derived profile (public API)
-# Input: generated_text (str), primary_keyword (str), serp_profile (Dict), enable_bm25f (bool), field_weights (Dict), field_b (Dict), signal_gaps (Optional[Dict]), top_terms_limit (int)
+# Input: generated_text (str), primary_keyword (str), serp_profile (Dict), enable_bm25f (bool), field_weights (Dict), field_b (Dict), signal_gaps (Optional[Dict]), top_terms_limit (int), strip_suffixes (bool)
 # Output: Dict[str, ElementQualityScore]
 # Side Effects: (none)
-# Business Rules: Parses sections, scores each with element-specific rubric; optionally computes BM25F coverage per element; optionally includes signal gaps
+# Business Rules: Parses sections, scores each with element-specific rubric; optionally computes BM25F coverage per element; optionally includes signal gaps; when strip_suffixes=True the BM25F coverage and density checks lemmatize the generated text so inflected forms match the lemmatized SERP query terms
 # Failure Modes: Returns dict with zero-scored elements for empty/missing sections; never raises
 # LINKS: PLAN 08-02 Task 7, PLAN 10-02 Task 2, PLAN 10-02 Task 4
 def score_generated_text(
@@ -1761,6 +1852,7 @@ def score_generated_text(
     field_b: Optional[Dict[str, float]] = None,
     signal_gaps: Optional[Dict[str, Any]] = None,
     top_terms_limit: int = 50,
+    strip_suffixes: bool = False,
 ) -> Dict[str, ElementQualityScore]:
     """Score generated SEO text against SERP-derived profile.
 
@@ -1776,6 +1868,8 @@ def score_generated_text(
         field_weights: Optional field weights for BM25F (uses defaults if None)
         field_b: Optional field b parameters for BM25F (uses defaults if None)
         signal_gaps: Optional signal gaps from crawl/SERP analysis for feedback
+        strip_suffixes: Whether to lemmatize the generated text for BM25F coverage and
+            keyword density so inflected forms match the lemmatized SERP query terms
 
     Returns:
         Dict mapping element type -> ElementQualityScore with optional BM25F scores
@@ -1823,6 +1917,7 @@ def score_generated_text(
             serp_profile,
             generated_text,
             top_terms_limit=top_terms_limit,
+            strip_suffixes=strip_suffixes,
         )
 
         # Compute BM25F coverage if enabled
@@ -1852,6 +1947,7 @@ def score_generated_text(
                     field_b=b_tuple,
                     k1=1.2,
                     top_n=1,
+                    strip_suffixes=strip_suffixes,
                 )
 
                 if bm25f_scores:
@@ -1910,6 +2006,8 @@ class NgramScore:
     weighted_count: float
     doc_frequency: int
     sources: Dict[str, int]
+    total_word_count: int = 0
+    density_pct: float = 0.0
 
 
 @dataclass
@@ -1926,6 +2024,9 @@ class TfidfTermScore:
     raw_tf: float
     idf: float
     doc_frequency: int
+    raw_count: int = 0
+    total_word_count: int = 0
+    density_pct: float = 0.0
 
 
 @dataclass
@@ -1940,6 +2041,8 @@ class CooccurrenceTermScore:
     cooccurrence_count: int
     jaccard_similarity: float
     context_terms: List[str]
+    total_word_count: int = 0
+    density_pct: float = 0.0
 
 
 @dataclass

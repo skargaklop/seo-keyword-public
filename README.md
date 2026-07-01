@@ -664,6 +664,52 @@ Or:
 python -m pytest tests -q
 ```
 
+## Command-line interface (seos-cli)
+
+A headless CLI runs the full enrichment pipeline without the Streamlit UI — fully independent of
+Streamlit (it never imports it, `utils.pipeline`, or `config.i18n`). It reuses the same
+streamlit-free `utils/` stage callables.
+
+```bash
+# Full run: keywords -> Google Ads metrics -> SERP -> Trends -> SEO text -> merged report
+python -m cli run --keywords "coffee, tea" --out report.xlsx --format xlsx
+
+# Scrape URLs, extract keywords via LLM, then enrich
+python -m cli run --urls https://example.com --out report.json --format json
+
+# Run only some steps
+python -m cli run --keywords "coffee" --steps ads,serp,merge,export
+
+# Resume a long paid-API run after a failure (skips steps already checkpointed)
+python -m cli run --keywords "coffee" --resume last
+
+# Version + configured provider summary
+python -m cli version
+
+# Or via the launcher (handles Python discovery + PYTHONUTF8):
+seos-cli.bat run --keywords "coffee" --out report.xlsx
+```
+
+Flags: `--keywords` (comma-separated), `--urls`, `--from-file`, `--steps`, `--language`,
+`--provider`/`--model` (LLM), `--serp-provider`, `--out`, `--format` (xlsx|csv|json),
+`--max-keywords`, `--workdir`/`--resume`/`--clean` (checkpoint), `--help`.
+
+### Make `seos-cli` callable from anywhere
+
+```bash
+# Install the shim + PATH entry (Windows uses winreg, never setx; refuses if PATH is too long)
+python -m cli register
+
+# Check where the shim lives / whether it's on PATH
+python -m cli register --status
+
+# Remove it again (fully reversible)
+python -m cli register --unregister
+```
+
+See `docs/cli-plan.md` for the full design (independence guarantee, anti-drift merge parity,
+checkpoint/resume, setx-free registration).
+
 ## More
 
 - Google Ads API setup guide: [GOOGLE_ADS_SETUP.md](GOOGLE_ADS_SETUP.md)

@@ -2,6 +2,8 @@
 Multi-provider SERP client models and adapters.
 """
 
+import csv
+import io
 import os
 from abc import ABC
 from dataclasses import dataclass, field
@@ -22,10 +24,10 @@ from utils.logger import logger
 # Purpose: Provide common SERP result models and a multi-provider search client for SERP analysis workflows.
 # Rationale: Keeps provider-specific HTTP payloads behind adapters while returning one normalized result shape.
 # Dependencies: abc, dataclasses, os, typing, requests, tenacity, config.settings, utils.logger.
-# Exports: SERPOrganicResult, SERPPeopleAlsoAsk, SERPKnowledgeGraph, SERPSearchResult, SERPProviderAdapter, SerperDevAdapter, SerpApiAdapter, BraveSearchAdapter, SearchApiIoAdapter, ZenserpAdapter, ScraperApiAdapter, DataForSeoAdapter, SerpstatAdapter, SerpstackAdapter, ScaleSERPAdapter, ValueSERPAdapter, SERPClient, create_serp_client.
+# Exports: SERPOrganicResult, SERPPeopleAlsoAsk, SERPKnowledgeGraph, SERPSearchResult, SERPProviderAdapter, SerperDevAdapter, SerpApiAdapter, BraveSearchAdapter, SearchApiIoAdapter, ZenserpAdapter, ScraperApiAdapter, DataForSeoAdapter, SerpstatAdapter, SemrushAdapter, SerpstackAdapter, ScaleSERPAdapter, ValueSERPAdapter, SERPClient, create_serp_client.
 # LINKS: requirements.xml#UC-006, knowledge-graph.xml#MOD-006, verification-plan.xml#V-MOD-006
 # MODULE_MAP: utils/serp_client.py
-# Public Functions: SERPOrganicResult, SERPPeopleAlsoAsk, SERPKnowledgeGraph, SERPSearchResult, SERPProviderAdapter.search, SerperDevAdapter.search, SerpApiAdapter.search, BraveSearchAdapter.search, SearchApiIoAdapter.search, ZenserpAdapter.search, ScraperApiAdapter.search, DataForSeoAdapter.search, SerpstatAdapter.search, SerpstackAdapter.search, ScaleSERPAdapter.search, ValueSERPAdapter.search, SERPClient.search, SERPClient.search_batch, create_serp_client.
+# Public Functions: SERPOrganicResult, SERPPeopleAlsoAsk, SERPKnowledgeGraph, SERPSearchResult, SERPProviderAdapter.search, SerperDevAdapter.search, SerpApiAdapter.search, BraveSearchAdapter.search, SearchApiIoAdapter.search, ZenserpAdapter.search, ScraperApiAdapter.search, DataForSeoAdapter.search, SerpstatAdapter.search, SemrushAdapter.search, SerpstackAdapter.search, ScaleSERPAdapter.search, ValueSERPAdapter.search, SERPClient.search, SERPClient.search_batch, create_serp_client.
 # Private Helpers: _text, _first_text, _decode_unicode_recursive, _format_rich_snippet, _normalize_organic_results, _normalize_related_searches, _normalize_people_also_ask, _normalize_knowledge_graph, _make_result, _failure_result, _raise_for_provider_error, _traject_data_normalize.
 # Key Semantic Blocks: block_serp_models_normalized_result, block_serp_provider_http_request, block_serp_provider_payload_normalize, block_serp_client_retry_search, block_serp_client_batch_iterate
 # Critical Flows: provider payloads normalize into SERPSearchResult for downstream workflows; adapter HTTP requests pass provider auth and timeout; failed searches become structured failure results.
@@ -1123,6 +1125,138 @@ class SerpstatAdapter(SERPProviderAdapter):
         )
 
 
+# FUNCTION_CONTRACT: _semrush_database
+# Purpose: Map internal gl country codes to Semrush database codes.
+# Input: gl (str)
+# Output: str
+# Side Effects: none
+# Business Rules: Known aliases are normalized conservatively; unsupported country codes pass through lower-case instead of forcing a default database.
+# Failure Modes: Empty input falls back to "us" because Semrush requires a database code.
+# LINKS: docs/operational-packets.xml#PACKET-17-SEMRUSH-SERP
+def _semrush_database(gl: str) -> str:
+    normalized = _text(gl).strip().lower()
+    aliases = {
+        "gb": "uk",
+        "uk": "uk",
+        "us": "us",
+        "ua": "ua",
+        "de": "de",
+        "pl": "pl",
+        "ru": "ru",
+        "fr": "fr",
+        "tr": "tr",
+    }
+    return aliases.get(normalized, normalized or "us")
+
+
+# FUNCTION_CONTRACT: _semrush_first_text
+# Purpose: Return the first populated value for Semrush CSV long/short header variants.
+# Input: row (dict[str, str]), fields (Sequence[str])
+# Output: str
+# Side Effects: none
+# Business Rules: Supports both human-readable CSV headers and explicit export column abbreviations.
+# Failure Modes: Returns empty string when headers or values are absent.
+# LINKS: docs/operational-packets.xml#PACKET-17-SEMRUSH-SERP
+def _semrush_first_text(row: dict[str, Any], fields: Sequence[str]) -> str:
+    normalized_row = {(_text(key).strip().lower()): value for key, value in row.items()}
+    for field in fields:
+        value = _text(normalized_row.get(field.lower())).strip()
+        if value:
+            return value
+    return ""
+
+
+# FUNCTION_CONTRACT: _normalize_semrush_csv
+# Purpose: Normalize Semrush phrase_organic semicolon-delimited CSV into the shared SERP result shape.
+# Input: keyword (str), csv_text (str)
+# Output: SERPSearchResult
+# Side Effects: none
+# Business Rules: Semrush phrase_organic is a degraded legacy report; title/snippet are unavailable and receive explicit limited fallbacks.
+# Failure Modes: Malformed rows without URLs are skipped; invalid positions fall back to row order.
+# LINKS: docs/operational-packets.xml#PACKET-17-SEMRUSH-SERP
+def _normalize_semrush_csv(keyword: str, csv_text: str) -> SERPSearchResult:
+    organic: list[SERPOrganicResult] = []
+    related_searches: list[str] = []
+    seen_related: set[str] = set()
+    reader = csv.DictReader(io.StringIO(csv_text or ""), delimiter=";")
+    for index, row in enumerate(reader, start=1):
+        if not isinstance(row, dict):
+            continue
+        url = _semrush_first_text(row, ("Url", "Ur"))
+        if not url:
+            continue
+        domain = _semrush_first_text(row, ("Domain", "Dn")) or url
+        position = _semrush_first_text(row, ("Position", "Po"))
+        try:
+            position_int = int(position)
+        except (TypeError, ValueError):
+            position_int = index
+        organic.append(
+            SERPOrganicResult(
+                position=position_int,
+                title=domain,
+                url=url,
+                snippet="Semrush limited organic result; title/snippet unavailable from phrase_organic report.",
+                displayed_link=domain,
+            )
+        )
+        for field_name in ("Keywords SERP Features", "Fk", "SERP Features", "Fp"):
+            features = _semrush_first_text(row, (field_name,))
+            for feature in features.split(","):
+                feature_text = feature.strip()
+                if feature_text and feature_text not in seen_related:
+                    related_searches.append(feature_text)
+                    seen_related.add(feature_text)
+    return _make_result(
+        keyword=keyword,
+        provider="semrush",
+        organic=organic,
+        related_searches=related_searches,
+    )
+
+
+# CLASS_CONTRACT: SemrushAdapter
+# Purpose: Query Semrush legacy phrase_organic report and normalize limited Google organic SERP fields.
+# NOTE: Semrush phrase_organic is a degraded/deprecated SERP source: it does not return title, snippet, hl, device, safe-search, google_domain, location, or UULE.
+# LINKS: docs/operational-packets.xml#PACKET-17-SEMRUSH-SERP
+class SemrushAdapter(SERPProviderAdapter):
+    provider_name = "semrush"
+    env_var = "SEMRUSH_API_KEY"
+    endpoint = "https://api.semrush.com/"
+    max_per_page = 100
+    start_param = None
+    export_columns = "Po,Dn,Ur,Fk,Fp"
+
+    # FUNCTION_CONTRACT: SemrushAdapter.search
+    # Purpose: GET Semrush phrase_organic CSV report and normalize its limited organic rows.
+    # Input: query (str), num_results (int), gl (str), hl (str), timeout (int), extra_params (dict | None)
+    # Output: SERPSearchResult
+    # Side Effects: performs HTTP GET to Semrush legacy API.
+    # Business Rules: Uses explicit export_columns and database derived from gl; ignores unsupported advanced SERP parameters because Semrush does not provide them.
+    # Failure Modes: requests.RequestException, provider HTTP errors.
+    # LINKS: docs/operational-packets.xml#PACKET-17-SEMRUSH-SERP
+    def search(
+        self,
+        query: str,
+        num_results: int,
+        gl: str,
+        hl: str,
+        timeout: int,
+        extra_params: dict | None = None,
+    ) -> SERPSearchResult:
+        params: dict[str, Any] = {
+            "type": "phrase_organic",
+            "key": self.api_key,
+            "phrase": query,
+            "database": _semrush_database(gl),
+            "display_limit": num_results,
+            "export_columns": self.export_columns,
+        }
+        response = requests.get(self.endpoint, params=params, timeout=timeout)
+        _raise_for_provider_error(response)
+        return _normalize_semrush_csv(query, response.text)
+
+
 # CLASS_CONTRACT: BraveSearchAdapter
 # Purpose: Query Brave Search and normalize its web result response.
 # LINKS: requirements.xml#UC-006, verification-plan.xml#V-MOD-006
@@ -1608,6 +1742,7 @@ PROVIDER_REGISTRY = {
     "scraperapi": ("SCRAPERAPI_KEY", ScraperApiAdapter),
     "dataforseo": (("DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD"), DataForSeoAdapter),
     "serpstat": ("SERPSTAT_TOKEN", SerpstatAdapter),
+    "semrush": ("SEMRUSH_API_KEY", SemrushAdapter),
     "serpstack": ("SERPSTACK_KEY", SerpstackAdapter),
     "scaleserp": ("SCALESERP_KEY", ScaleSERPAdapter),
     "valueserp": ("VALUESERP_KEY", ValueSERPAdapter),

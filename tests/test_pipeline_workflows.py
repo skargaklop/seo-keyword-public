@@ -132,11 +132,166 @@ class TestSeedWorkflows:
             currency_code="USD",
         )
 
+    # Purpose: REGRESSION for the production bug where url_llm_ads returned "Не найдено
+    # ключевых слов, подходящих под критерии" for a page (shoptobi.com.ua) that 403-blocks
+    # the requests/aiohttp scraper. Root cause: run_llm_url_workflow used the base
+    # WebScraper.scrape_urls (no browser fallback), so a 403/captcha was terminal -> the
+    # scrape failed -> the LLM was skipped -> no keywords. The browser fallback
+    # (scrape_urls_with_browser_fallback, which retries 403s via cloakbrowser) must be the
+    # scrape entry point for the LLM-url workflow. Here the requests path 403s and the
+    # browser recovers the body — the workflow must still produce keywords from that body.
+    def test_llm_url_workflow_recovers_keywords_after_403_via_browser_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "utils.pipeline.URLValidator.validate_urls",
+            lambda urls: (urls, []),
+        )
+        # The requests path hard-fails with 403 (what shoptobi.com.ua does to aiohttp).
+        monkeypatch.setattr(
+            "utils.pipeline.WebScraper.scrape_urls",
+            lambda *args, **kwargs: [
+                ScrapedContent(
+                    url="https://example.com",
+                    success=False,
+                    error="403 Forbidden",
+                )
+            ],
+        )
+        # The browser fallback recovers the rendered body.
+        monkeypatch.setattr(
+            "utils.pipeline.WebScraper.scrape_urls_with_browser_fallback",
+            lambda *args, **kwargs: [
+                ScrapedContent(
+                    url="https://example.com",
+                    title="T",
+                    text="recovered body from browser",
+                    success=True,
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            "utils.pipeline.KeywordProcessor.process_keywords",
+            staticmethod(lambda keywords: keywords),
+        )
+        monkeypatch.setattr(
+            "utils.pipeline.KeywordProcessor.deduplicate_across_sources",
+            staticmethod(lambda source_keywords: source_keywords),
+        )
+
+        captured_text: dict = {}
+
+        class _FakeLLMHandler:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def generate_keywords(
+                self, text, provider, model, max_keywords, custom_prompt=""
+            ):
+                captured_text["text"] = text
+                return ["купити стружку"]
+
+        class _FakeAdsHandler:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def get_keyword_metrics(self, keywords):
+                return pd.DataFrame(
+                    [
+                        {
+                            "Keyword": "купити стружку",
+                            "Source URL": "",
+                            "Avg Monthly Searches": 50,
+                        }
+                    ]
+                )
+
+        monkeypatch.setattr("utils.pipeline.LLMHandler", _FakeLLMHandler)
+        monkeypatch.setattr("utils.pipeline.GoogleAdsHandler", _FakeAdsHandler)
+
+        df = pipeline.run_llm_url_workflow(
+            urls=["https://example.com"],
+            provider="OpenAI",
+            model="gpt-test",
+            max_keywords=10,
+            location_id="2840",
+            language_id="1000",
+            currency_code="USD",
+        )
+
+        # The recovered browser body must reach the LLM (not the failed requests body).
+        assert "recovered body from browser" in captured_text.get("text", "")
+        # And the workflow must yield keywords instead of "no keywords found" -> None.
         assert df is not None
-        assert df["Source URL"].tolist() == ["https://example.com"]
+        assert df["Keyword"].tolist() == ["купити стружку"]
         assert st.session_state.scraped_content == {
-            "https://example.com": "scraped text"
+            "https://example.com": "recovered body from browser"
         }
+
+    # Purpose: Same 403→browser-recovery regression, but for the staged keyword-extraction
+    # entry point (run_llm_url_keyword_extraction_stage) that backs the gated SERP/Ads
+    # handoff. It must also use the browser-fallback scrape path so a 403-blocked page is
+    # recovered before LLM extraction instead of yielding no keywords.
+    def test_llm_keyword_extraction_stage_recovers_after_403_via_browser_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "utils.pipeline.URLValidator.validate_urls",
+            lambda urls: (urls, []),
+        )
+        monkeypatch.setattr(
+            "utils.pipeline.WebScraper.scrape_urls",
+            lambda *args, **kwargs: [
+                ScrapedContent(
+                    url="https://example.com",
+                    success=False,
+                    error="403 Forbidden",
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            "utils.pipeline.WebScraper.scrape_urls_with_browser_fallback",
+            lambda *args, **kwargs: [
+                ScrapedContent(
+                    url="https://example.com",
+                    title="T",
+                    text="recovered body from browser",
+                    success=True,
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            "utils.pipeline.KeywordProcessor.process_keywords",
+            staticmethod(lambda keywords: keywords),
+        )
+        monkeypatch.setattr(
+            "utils.pipeline.KeywordProcessor.deduplicate_across_sources",
+            staticmethod(lambda source_keywords: source_keywords),
+        )
+
+        captured_text: dict = {}
+
+        class _FakeLLMHandler:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def generate_keywords(
+                self, text, provider, model, max_keywords, custom_prompt=""
+            ):
+                captured_text["text"] = text
+                return ["купити стружку"]
+
+        monkeypatch.setattr("utils.pipeline.LLMHandler", _FakeLLMHandler)
+
+        result = pipeline.run_llm_url_keyword_extraction_stage(
+            urls=["https://example.com"],
+            provider="OpenAI",
+            model="gpt-test",
+            max_keywords=10,
+        )
+
+        assert "recovered body from browser" in captured_text.get("text", "")
+        assert result == {"https://example.com": ["купити стружку"]}
 
     # Purpose: Test url seed workflow fetches ideas without scraper or llm
     def test_url_seed_workflow_fetches_ideas_without_scraper_or_llm(
@@ -395,6 +550,13 @@ class TestSeedWorkflows:
                     error="scrape failed",
                 )
             ],
+        )
+        # Browser fallback must also be unavailable so this test stays focused on the
+        # "no content recovered from any path" warning branch. (When cloakbrowser IS
+        # installed, scrape_urls_with_browser_fallback would recover the URL instead.)
+        monkeypatch.setattr(
+            "utils.browser_scraper.create_browser_scraper",
+            lambda *args, **kwargs: None,
         )
 
         warning_messages = []

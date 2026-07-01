@@ -6,6 +6,7 @@
 #            markup helper returns a static string), so they are unit-testable directly.
 # Dependencies: components.results
 # Exports: pytest tests
+# LINKS: knowledge-graph.xml#MOD-007
 # Verification: python -m pytest tests/test_results_helpers.py -q
 # CHANGE_SUMMARY: New — covers _scroll_to_top_markup and build_export_filename_suffix.
 

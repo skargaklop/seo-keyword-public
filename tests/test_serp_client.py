@@ -14,6 +14,7 @@ from utils.serp_client import (
     ScraperApiAdapter,
     SerpApiAdapter,
     SerperDevAdapter,
+    SemrushAdapter,
     SerpstackAdapter,
     PROVIDER_REGISTRY,
     SERPClient,
@@ -44,6 +45,7 @@ SERP_ENV_VARS = [
     "DATAFORSEO_LOGIN",
     "DATAFORSEO_PASSWORD",
     "SERPSTAT_TOKEN",
+    "SEMRUSH_API_KEY",
     "SERPSTACK_KEY",
     "SCALESERP_KEY",
     "VALUESERP_KEY",
@@ -54,6 +56,7 @@ SERP_ENV_VARS = [
 def _response(payload, status_code=200):
     response = MagicMock()
     response.json.return_value = payload
+    response.text = payload if isinstance(payload, str) else ""
     response.raise_for_status.return_value = None
     response.status_code = status_code
     return response
@@ -486,6 +489,51 @@ def test_serpstat_adapter_se_param_format():
         assert body["params"]["se"] == "g_ua"  # gl -> g_{gl} format
 
 
+# Semrush adapter tests
+# Purpose: Test semrush adapter request params use legacy phrase organic report
+def test_semrush_adapter_request_params():
+    csv_payload = "Position;Domain;Url;Keywords SERP Features;SERP Features\n"
+
+    with patch("utils.serp_client.requests.get", return_value=_response(csv_payload)) as get:
+        SemrushAdapter("semrush-key").search("wood shavings", 7, "US", "en", 30)
+
+    get.assert_called_once()
+    assert get.call_args.args[0] == "https://api.semrush.com/"
+    assert get.call_args.kwargs["timeout"] == 30
+    params = get.call_args.kwargs["params"]
+    assert params["type"] == "phrase_organic"
+    assert params["key"] == "semrush-key"
+    assert params["phrase"] == "wood shavings"
+    assert params["database"] == "us"
+    assert params["display_limit"] == 7
+    assert params["export_columns"] == "Po,Dn,Ur,Fk,Fp"
+
+
+# Purpose: Test semrush semicolon csv normalizes into limited SERP result
+def test_semrush_adapter_normalizes_semicolon_csv():
+    csv_payload = (
+        "Position;Domain;Url;Keywords SERP Features;SERP Features\n"
+        "3;example.test;https://example.test/page;featured snippet, reviews;sitelinks\n"
+    )
+
+    with patch("utils.serp_client.requests.get", return_value=_response(csv_payload)):
+        result = SemrushAdapter("semrush-key").search("keyword", 10, "ua", "uk", 30)
+
+    assert result.keyword == "keyword"
+    assert result.provider == "semrush"
+    assert result.success is True
+    assert result.organic == [
+        SERPOrganicResult(
+            3,
+            "example.test",
+            "https://example.test/page",
+            "Semrush limited organic result; title/snippet unavailable from phrase_organic report.",
+            "example.test",
+        )
+    ]
+    assert result.related_searches == ["featured snippet", "reviews", "sitelinks"]
+
+
 # Remaining original tests
 # Purpose: Test adapter handles empty response
 def test_adapter_handles_empty_response():
@@ -669,8 +717,8 @@ def test_factory_dual_auth_missing_password_returns_none(monkeypatch):
     assert create_serp_client({"provider": "dataforseo"}) is None
 
 
-# Purpose: Test factory maps all 12 providers
-def test_factory_maps_all_12_providers(monkeypatch):
+# Purpose: Test factory maps all 13 providers
+def test_factory_maps_all_13_providers(monkeypatch):
     _clear_serp_env(monkeypatch)
     expected = {
         "serper_dev": ("SERPER_API_KEY", SerperDevAdapter),
@@ -681,6 +729,7 @@ def test_factory_maps_all_12_providers(monkeypatch):
         "scraperapi": ("SCRAPERAPI_KEY", ScraperApiAdapter),
         "dataforseo": (("DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD"), DataForSeoAdapter),
         "serpstat": ("SERPSTAT_TOKEN", SerpstatAdapter),
+        "semrush": ("SEMRUSH_API_KEY", SemrushAdapter),
         "serpstack": ("SERPSTACK_KEY", SerpstackAdapter),
         "scaleserp": ("SCALESERP_KEY", ScaleSERPAdapter),
         "valueserp": ("VALUESERP_KEY", ValueSERPAdapter),
@@ -699,6 +748,30 @@ def test_factory_maps_all_12_providers(monkeypatch):
         client = create_serp_client({"provider": provider})
 
         assert isinstance(client.adapter, adapter_class)
+
+
+# Purpose: Test factory returns none for semrush without key
+def test_factory_returns_none_for_semrush_without_key(monkeypatch):
+    _clear_serp_env(monkeypatch)
+
+    assert create_serp_client({"provider": "semrush"}) is None
+
+
+# Purpose: Test factory returns semrush client with key
+def test_factory_returns_semrush_client_with_key(monkeypatch):
+    _clear_serp_env(monkeypatch)
+    monkeypatch.setenv("SEMRUSH_API_KEY", "semrush-key")
+
+    client = create_serp_client({"provider": "semrush"})
+
+    assert isinstance(client, SERPClient)
+    assert isinstance(client.adapter, SemrushAdapter)
+
+
+# Purpose: Test semrush requires api key
+def test_semrush_is_not_api_key_free():
+    assert PROVIDER_REGISTRY["semrush"][0] == "SEMRUSH_API_KEY"
+    assert PROVIDER_REGISTRY["semrush"][0] != ""
 
 
 # Purpose: Test browser cloakbrowser adapter normalizes browser result

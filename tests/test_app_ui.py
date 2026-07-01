@@ -190,6 +190,9 @@ def test_main_ignores_immediate_duplicate_form_submission(
     monkeypatch.setattr("app.st.button", lambda *args, **kwargs: False)
     monkeypatch.setattr("app.render_keyword_results", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.render_scraping_preview", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.render_scraped_text_math_report", lambda *args, **kwargs: None
+    )
     monkeypatch.setattr("app.render_keyword_selection", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "app.render_keyword_ideas_generation", lambda *args, **kwargs: None
@@ -260,6 +263,9 @@ def test_main_allows_same_submission_again_after_non_submit_rerun(
     monkeypatch.setattr("app.st.button", lambda *args, **kwargs: False)
     monkeypatch.setattr("app.render_keyword_results", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.render_scraping_preview", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.render_scraped_text_math_report", lambda *args, **kwargs: None
+    )
     monkeypatch.setattr("app.render_keyword_selection", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "app.render_keyword_ideas_generation", lambda *args, **kwargs: None
@@ -283,16 +289,15 @@ def test_main_allows_same_submission_again_after_non_submit_rerun(
     assert len(calls) == 2
 
 
+# Mirror the real signature of run_llm_url_keyword_extraction_tupled.
+#
+# Production signature is (urls, **workflow_kwargs): exactly one positional
+# parameter. Using the real signature (not a permissive ``lambda *args``)
+# means a caller that passes provider/model/max_keywords positionally raises
+# TypeError exactly as it does in the running app — which is the regression
+# this test guards against. Recording the call lets us also assert the
+# arguments were forwarded by keyword.
 def _stub_tupled_extraction_with_real_signature(calls):
-    """Mirror the real signature of run_llm_url_keyword_extraction_tupled.
-
-    Production signature is (urls, **workflow_kwargs): exactly one positional
-    parameter. Using the real signature (not a permissive ``lambda *args``)
-    means a caller that passes provider/model/max_keywords positionally raises
-    TypeError exactly as it does in the running app — which is the regression
-    this test guards against. Recording the call lets us also assert the
-    arguments were forwarded by keyword.
-    """
 
     def _stub(urls, **workflow_kwargs):
         calls.append({"args": (urls,), "kwargs": workflow_kwargs})
@@ -361,6 +366,9 @@ def test_main_primary_url_llm_workflow_calls_extraction_by_keyword(
     monkeypatch.setattr("app.st.button", lambda *args, **kwargs: False)
     monkeypatch.setattr("app.render_keyword_results", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.render_scraping_preview", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.render_scraped_text_math_report", lambda *args, **kwargs: None
+    )
     monkeypatch.setattr("app.render_keyword_selection", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "app.render_keyword_ideas_generation", lambda *args, **kwargs: None
@@ -545,7 +553,13 @@ def test_render_serp_math_report_shows_full_profile_without_fixed_truncation(
         for i in range(20)
     ]
     tfidf_terms = [
-        SimpleNamespace(term=f"tfidf-{i}", tfidf=i / 10, doc_frequency=i + 3)
+        SimpleNamespace(
+            term=f"tfidf-{i}",
+            tfidf=i / 10,
+            raw_tf=(i + 1) / 100,
+            idf=2.0 + i / 10,
+            doc_frequency=i + 3,
+        )
         for i in range(20)
     ]
     cooccurrence_terms = [
@@ -586,9 +600,8 @@ def test_render_serp_math_report_shows_full_profile_without_fixed_truncation(
     )
 
     section = {"name": None, "count": 0}
-    rendered_ngram_terms: list[str] = []
-    rendered_tfidf_terms: list[str] = []
-    rendered_cooccurrence_terms: list[str] = []
+    rendered_dataframes: list[object] = []  # dataframes passed to st.dataframe / st.data_editor
+    data_editor_frames: list[object] = []
 
     class _DummyContext:
         def __enter__(self):
@@ -614,6 +627,91 @@ def test_render_serp_math_report_shows_full_profile_without_fixed_truncation(
     monkeypatch.setattr("components.results.st.info", lambda *args, **kwargs: None)
     monkeypatch.setattr("components.results.st.warning", lambda *args, **kwargs: None)
     monkeypatch.setattr("components.results.st.success", lambda *args, **kwargs: None)
+
+    def _dataframe(df, *args, **kwargs):
+        rendered_dataframes.append(df)
+
+    def _data_editor(df, *args, **kwargs):
+        # Return the dataframe unchanged so the renderer can read selected rows.
+        data_editor_frames.append(df)
+        return df
+
+    monkeypatch.setattr("components.results.st.dataframe", _dataframe)
+    monkeypatch.setattr("components.results.st.data_editor", _data_editor)
+    monkeypatch.setattr("components.results.st.caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr("components.results.st.tabs", lambda labels: [_DummyContext() for _ in labels])
+    monkeypatch.setattr("components.results.st.columns", lambda spec: [_DummyContext() for _ in (spec if isinstance(spec, (list, tuple)) else range(spec))])
+    monkeypatch.setattr("components.results.st.expander", lambda *args, **kwargs: _DummyContext())
+    monkeypatch.setattr("components.results.st.button", lambda *args, **kwargs: False)
+    monkeypatch.setattr("components.results.st.download_button", lambda *args, **kwargs: None)
+    monkeypatch.setattr("components.results.st.write", lambda *args, **kwargs: None)
+    monkeypatch.setattr("components.results.st.metric", lambda *args, **kwargs: None)
+
+    results.render_serp_math_report()
+
+    # N-grams and co-occurrence render as dataframe tables (rich UI), not st.write rows.
+    assert len(rendered_dataframes) >= 2
+
+    # TF-IDF renders as a data_editor with a Select column; every term must be present.
+    assert data_editor_frames, "TF-IDF must render via st.data_editor"
+    tfidf_editor = data_editor_frames[0]
+    assert "Term" in list(tfidf_editor.columns)
+    assert list(tfidf_editor["Term"]) == [f"tfidf-{i}" for i in range(20)]
+    assert app.t("seo_math_select_column") in list(tfidf_editor.columns)
+
+
+def test_render_serp_math_report_tfidf_selection_persists_for_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The merged Select column must still populate math_tfidf_select_selected for handoff."""
+    from components import results
+
+    st.session_state.clear()
+
+    tfidf_terms = [
+        SimpleNamespace(
+            term=f"tfidf-{i}",
+            tfidf=i / 10,
+            raw_tf=(i + 1) / 100,
+            idf=2.0 + i / 10,
+            doc_frequency=i + 3,
+        )
+        for i in range(5)
+    ]
+
+    monkeypatch.setattr(
+        "components.results.build_reverse_math_report",
+        lambda *args, **kwargs: {
+            "serp_profile": {
+                "enabled": True,
+                "info_message": "",
+                "has_partial_data": False,
+                "ngrams_by_size": {},
+                "tfidf_terms": tfidf_terms,
+                "cooccurrence_terms": [],
+                "intent": None,
+                "related_searches": [],
+                "people_also_ask": [],
+            },
+            "ads_enrichment": [],
+            "overlap_keywords": [],
+            "ads_only_keywords": [],
+            "serp_only_terms": [],
+        },
+    )
+
+    class _DummyContext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("components.results.st.divider", lambda *args, **kwargs: None)
+    monkeypatch.setattr("components.results.st.subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr("components.results.st.info", lambda *args, **kwargs: None)
+    monkeypatch.setattr("components.results.st.warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr("components.results.st.success", lambda *args, **kwargs: None)
     monkeypatch.setattr("components.results.st.dataframe", lambda *args, **kwargs: None)
     monkeypatch.setattr("components.results.st.caption", lambda *args, **kwargs: None)
     monkeypatch.setattr("components.results.st.tabs", lambda labels: [_DummyContext() for _ in labels])
@@ -621,27 +719,24 @@ def test_render_serp_math_report_shows_full_profile_without_fixed_truncation(
     monkeypatch.setattr("components.results.st.expander", lambda *args, **kwargs: _DummyContext())
     monkeypatch.setattr("components.results.st.button", lambda *args, **kwargs: False)
     monkeypatch.setattr("components.results.st.download_button", lambda *args, **kwargs: None)
-
-    def _write(value, *args, **kwargs):
-        if section["name"] == "ngrams" and isinstance(value, str) and value.startswith("**"):
-            rendered_ngram_terms.append(value)
-        elif section["name"] == "cooccurrence" and isinstance(value, str) and value.startswith("**"):
-            rendered_cooccurrence_terms.append(value)
-
-    def _checkbox(label, *args, **kwargs):
-        if section["name"] == "tfidf":
-            rendered_tfidf_terms.append(label)
-        return False
-
-    monkeypatch.setattr("components.results.st.write", _write)
-    monkeypatch.setattr("components.results.st.checkbox", _checkbox)
+    monkeypatch.setattr("components.results.st.write", lambda *args, **kwargs: None)
     monkeypatch.setattr("components.results.st.metric", lambda *args, **kwargs: None)
+
+    def _data_editor(df, *args, **kwargs):
+        # Simulate the user ticking rows 0, 2, 4.
+        df = df.copy()
+        select_col = app.t("seo_math_select_column")
+        df[select_col] = [i in (0, 2, 4) for i in range(len(df))]
+        return df
+
+    monkeypatch.setattr("components.results.st.data_editor", _data_editor)
 
     results.render_serp_math_report()
 
-    assert len(rendered_ngram_terms) == 20
-    assert len(rendered_tfidf_terms) == 20
-    assert len(rendered_cooccurrence_terms) == 20
+    selected = st.session_state.get("math_tfidf_select_selected", [])
+    assert selected == ["tfidf-0", "tfidf-2", "tfidf-4"], (
+        f"Select column must populate math_tfidf_select_selected for handoff; got {selected}"
+    )
 
 
 def test_math_analysis_export_sheets_include_bm25f_scores() -> None:
@@ -673,11 +768,78 @@ def test_math_analysis_export_sheets_include_bm25f_scores() -> None:
         "Field Contributions",
         "Matched Terms",
     ]
-    assert bm25f_df.iloc[0]["Doc ID"] == 7
-    assert bm25f_df.iloc[0]["Score"] == 1.2346
-    assert bm25f_df.iloc[0]["Coverage"] == 0.5
-    assert "title: 1.2000" in bm25f_df.iloc[0]["Field Contributions"]
-    assert bm25f_df.iloc[0]["Matched Terms"] == "alpha, keyword"
+
+
+def test_math_profile_contains_total_words_and_relative_density(monkeypatch: pytest.MonkeyPatch) -> None:
+    from utils.pipeline import build_scraped_text_math_profile
+
+    monkeypatch.setattr("utils.pipeline.SEO_MATH_CONFIG", {
+        "enabled": True,
+        "analyze_scraped_text": True,
+        "strip_suffixes": False,
+        "ngram_min": 1,
+        "ngram_max": 1,
+        "top_terms_limit": 10,
+        "min_ngram_count": 1,
+        "min_document_frequency": 1,
+        "analyze_ngrams": True,
+        "analyze_tfidf": True,
+        "analyze_cooccurrence": False,
+        "analyze_intent": False,
+        "analyze_bm25f": False,
+    })
+
+    profile = build_scraped_text_math_profile({
+        "https://example.com/a": "alpha beta beta gamma",
+        "https://example.com/b": "alpha beta delta epsilon",
+    })
+
+    assert profile["total_word_count"] == 8
+    beta = next(item for item in profile["ngrams_by_size"][1] if item.ngram == "beta")
+    assert beta.raw_count == 3
+    assert beta.total_word_count == 8
+    assert beta.density_pct == 37.5
+
+
+def test_scraped_text_math_always_runs_for_single_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression (task #3): math analysis must ALWAYS run when enabled — even for a
+    single scraped URL (the url_llm_ads path). The production default config has
+    min_document_frequency=2 and min_ngram_count=2, which previously zeroed out the
+    whole report (only intent survived) for any single-document corpus."""
+    from utils.pipeline import build_scraped_text_math_profile
+
+    # Production-default thresholds (min_df=2, min_ngram_count=2) — must NOT gate a
+    # single-page corpus to empty.
+    monkeypatch.setattr("utils.pipeline.SEO_MATH_CONFIG", {
+        "enabled": True,
+        "analyze_scraped_text": True,
+        "strip_suffixes": False,
+        "ngram_min": 1,
+        "ngram_max": 2,
+        "top_terms_limit": 20,
+        "min_ngram_count": 2,
+        "min_document_frequency": 2,
+        "analyze_ngrams": True,
+        "analyze_tfidf": True,
+        "analyze_cooccurrence": True,
+        "analyze_intent": True,
+        "analyze_bm25f": True,
+        "bm25f_params": {"k1": 1.2},
+        "field_weights": {"body_text": 1.0},
+    })
+
+    profile = build_scraped_text_math_profile({
+        "https://example.com/single": (
+            "buy the best smartphone online with fast delivery and discount price. "
+            "compare top catalog products and read customer reviews before purchase."
+        ),
+    })
+
+    # The report must NOT be empty just because there is one document.
+    assert profile["tfidf_terms"], "TF-IDF must return terms for a single-page corpus"
+    assert profile["ngrams_by_size"].get(1), "1-grams must return terms for a single-page corpus"
+    assert profile["cooccurrence_terms"], "co-occurrence must run for a single-page corpus"
+    assert profile["bm25f_scores"], "BM25F must run for a single-page corpus"
 
 
 def test_render_bm25f_scores_section_uses_localized_ui_labels(
@@ -1466,13 +1628,12 @@ def test_render_history_shows_cache_records_when_toggled(
     assert all("Hits: 5" in label for label in expander_labels)
 
 
+# Patch the Streamlit/HistoryManager surface that render_history touches.
+#
+# Shared by the clear-cache confirmation tests. The dialog opener
+# (show_clear_cache_confirm_dialog) is patched to run its testable body inline,
+# bypassing Streamlit's deferred dialog-open machinery.
 def _patch_history_render_common(monkeypatch: pytest.MonkeyPatch, results_module):
-    """Patch the Streamlit/HistoryManager surface that render_history touches.
-
-    Shared by the clear-cache confirmation tests. The dialog opener
-    (show_clear_cache_confirm_dialog) is patched to run its testable body inline,
-    bypassing Streamlit's deferred dialog-open machinery.
-    """
     cache_records = [
         {
             "record_type": "cache",
@@ -1836,6 +1997,66 @@ class TestSeoRegenerateButton:
         assert len(buttons_clicked) == 0
 
 
+class TestSeoResultsScrapedContentExportGate:
+
+    # GRACE: function _make_seo_df declaration.
+    def _make_seo_df(self) -> pd.DataFrame:
+        return pd.DataFrame({
+            "Keywords": ["kw1, kw2"],
+            "URL": ["https://example.com"],
+            "SEO Text": ["META_TITLE: Test Title\nMETA_DESCRIPTION: Test desc\nH1: Heading\nDESCRIPTION: Body text"],
+        })
+
+    # GRACE: function _patch_st_render declaration.
+    def _patch_st_render(self, monkeypatch, captured):
+        import components.results as results_mod
+
+        monkeypatch.setattr("streamlit.divider", lambda: None)
+        monkeypatch.setattr("streamlit.subheader", lambda *a, **kw: None)
+        monkeypatch.setattr("streamlit.success", lambda *a, **kw: None)
+        monkeypatch.setattr("streamlit.button", lambda *a, **kw: False)
+        monkeypatch.setattr("streamlit.rerun", lambda: None)
+
+        # GRACE: function capture_export_df declaration.
+        def capture_export_df(df, **kwargs):
+            captured["df"] = df.copy()
+
+        monkeypatch.setattr(results_mod, "_render_table_preview_with_exports", capture_export_df)
+
+    # GRACE: function test_export_omits_page_content_when_toggle_off declaration.
+    def test_export_omits_page_content_when_toggle_off(self, monkeypatch):
+        from components.results import render_seo_results
+
+        st.session_state.clear()
+        st.session_state["generated_seo_texts"] = self._make_seo_df()
+        st.session_state["scraped_content"] = {"https://example.com": "raw scraped page text"}
+
+        captured: dict = {}
+        self._patch_st_render(monkeypatch, captured)
+
+        render_seo_results(auto_save_excel=False, show_scraped_text=False)
+
+        assert "df" in captured, "export table was not passed to renderer"
+        assert "Page Content" not in captured["df"].columns
+
+    # GRACE: function test_export_includes_page_content_when_toggle_on declaration.
+    def test_export_includes_page_content_when_toggle_on(self, monkeypatch):
+        from components.results import render_seo_results
+
+        st.session_state.clear()
+        st.session_state["generated_seo_texts"] = self._make_seo_df()
+        st.session_state["scraped_content"] = {"https://example.com": "raw scraped page text"}
+
+        captured: dict = {}
+        self._patch_st_render(monkeypatch, captured)
+
+        render_seo_results(auto_save_excel=False, show_scraped_text=True)
+
+        assert "df" in captured, "export table was not passed to renderer"
+        assert "Page Content" in captured["df"].columns
+        assert captured["df"].iloc[0]["Page Content"] == "raw scraped page text"
+
+
 class TestSeoGenerationForceRefresh:
 
     # GRACE: function _patch_st_generation declaration.
@@ -2194,6 +2415,7 @@ class TestUrlLlmSeoHandoff:
         monkeypatch.setattr("app.st.rerun", lambda *a, **kw: None)
         monkeypatch.setattr("app.render_keyword_results", lambda *a, **kw: None)
         monkeypatch.setattr("app.render_scraping_preview", lambda *a, **kw: None)
+        monkeypatch.setattr("app.render_scraped_text_math_report", lambda *a, **kw: None)
         monkeypatch.setattr("app.render_keyword_selection", lambda *a, **kw: None)
         monkeypatch.setattr("app.render_keyword_ideas_generation", lambda *a, **kw: None)
         monkeypatch.setattr("app.render_seo_results", lambda *a, **kw: None)

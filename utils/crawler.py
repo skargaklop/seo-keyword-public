@@ -24,6 +24,7 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait
 from utils.logger import logger
 from utils.scraper import ScrapedContent, WebScraper
 from utils.url_safety import URLSafetyError, validate_safe_url_with_ips
+from utils.domain import registrable_domain
 
 INTERNAL_DOMAIN_SUFFIXES = (".local", ".internal")
 MAX_REDIRECTS = 5
@@ -157,18 +158,21 @@ def normalize_url(url: str, base: str = "") -> str:
 
 
 # FUNCTION_CONTRACT: _registrable_domain
-# Purpose: Compute a conservative same-site grouping key.
+# Purpose: Compute the registrable (eTLD+1) same-site grouping key for crawl scoping.
 # Input: hostname (str)
-# Output: str
-# Side Effects: none
-# Business Rules: Uses the last two labels as a lightweight public-site approximation for crawl scoping.
+# Output: str — the registrable domain; falls back to the lowercased host if resolution yields ""
+# Side Effects: none externally; delegates to utils.domain's cached offline PSL lookup
+# Business Rules: Delegates to utils.domain.registrable_domain (Public Suffix List via tldextract).
+#   Falls back to the bare host when the PSL yields no registrable domain (e.g. single-label host),
+#   so same-domain scoping degrades gracefully instead of treating all hosts as external.
 # Failure Modes: never raises.
-# LINKS: PLAN 08-03 Task 2
+# LINKS: PLAN 08-03 Task 2, utils/domain.py#registrable_domain
 def _registrable_domain(hostname: str) -> str:
-    labels = [label for label in str(hostname or "").lower().split(".") if label]
-    if len(labels) <= 2:
-        return ".".join(labels)
-    return ".".join(labels[-2:])
+    host = str(hostname or "").lower().strip()
+    if not host:
+        return ""
+    registered = registrable_domain(host)
+    return registered or host
 
 
 # FUNCTION_CONTRACT: _same_domain

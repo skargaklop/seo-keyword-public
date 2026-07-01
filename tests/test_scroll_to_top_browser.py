@@ -17,6 +17,7 @@
 #   receive it), so it is the realistic trigger — NOT a bypass of the bug.
 # Dependencies: playwright, streamlit, the running app.py.
 # Exports: pytest tests (browser-backed).
+# LINKS: knowledge-graph.xml#MOD-007
 # Verification: python -m pytest tests/test_scroll_to_top_browser.py -q
 # CHANGE_SUMMARY: New — Playwright E2E proof that the scroll-to-top button becomes stably
 #                 visible on the real Streamlit scroll container AND that clicking it scrolls
@@ -57,13 +58,12 @@ def _streamlit_ready(proc: subprocess.Popen, port: int, timeout: float = 60.0) -
     return False
 
 
+# Wait until Streamlit's script run is no longer in the 'running' state.
+#
+# The button + CSS are injected by app code during the script run; querying while
+# data-test-script-state="running" returns an empty shell. This waits for the run to
+# reach a settled (non-running) state before asserting.
 def _wait_for_script_settled(page, timeout: float = 25.0) -> None:
-    """Wait until Streamlit's script run is no longer in the 'running' state.
-
-    The button + CSS are injected by app code during the script run; querying while
-    data-test-script-state="running" returns an empty shell. This waits for the run to
-    reach a settled (non-running) state before asserting.
-    """
     page.wait_for_function(
         """() => {
             const el = document.querySelector('[data-test-script-state]');
@@ -74,15 +74,14 @@ def _wait_for_script_settled(page, timeout: float = 25.0) -> None:
     )
 
 
+# Scroll Streamlit 1.58's real content container (section[data-testid="stMain"]).
+#
+# The browser dispatches a NON-bubbling 'scroll' event on whichever element scrolled;
+# we reproduce that exactly (bubbles:false). Capture-phase listeners on window/document
+# still receive it, so this is the faithful real-user trigger — not a bug-bypassing
+# synthetic bubbling event. page.mouse.wheel is NOT used because on a fresh load it hits
+# the sidebar (stSidebarContent), not the main area.
 def _scroll_real_container(page, delta: int = 800) -> None:
-    """Scroll Streamlit 1.58's real content container (section[data-testid="stMain"]).
-
-    The browser dispatches a NON-bubbling 'scroll' event on whichever element scrolled;
-    we reproduce that exactly (bubbles:false). Capture-phase listeners on window/document
-    still receive it, so this is the faithful real-user trigger — not a bug-bypassing
-    synthetic bubbling event. page.mouse.wheel is NOT used because on a fresh load it hits
-    the sidebar (stSidebarContent), not the main area.
-    """
     page.evaluate(
         """(delta) => {
             const el = document.querySelector('section[data-testid="stMain"]');
@@ -122,8 +121,8 @@ def streamlit_url() -> str:
 
 
 @pytest.fixture()
+# A browser page on the loaded app, settled past the initial script run.
 def page_at_ready(streamlit_url: str):
-    """A browser page on the loaded app, settled past the initial script run."""
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 1280, "height": 800})
@@ -140,20 +139,19 @@ def _button_class(page) -> str:
     return page.get_attribute("#consoleScrollTop", "class") or ""
 
 
+# At the top, the button must be hidden (no .is-visible).
 def test_button_hidden_when_content_is_at_top(page_at_ready) -> None:
-    """At the top, the button must be hidden (no .is-visible)."""
     assert "is-visible" not in _button_class(page_at_ready)
 
 
+# After scrolling the real container, the button must be visible AND stay visible.
+#
+# Regression: the 1s setInterval fallback queried the WRONG container
+# (.main / stAppViewContainer, scrollTop always 0 in Streamlit 1.58), so it kept
+# REMOVING .is-visible ~1s after the scroll event ADDed it — a visible flicker that
+# made the button unreliable. A stable (no-flicker) assertion catches this; the old
+# flaky test only caught a transient is-visible and masked the bug.
 def test_button_stays_visible_after_scroll_no_flicker(page_at_ready) -> None:
-    """After scrolling the real container, the button must be visible AND stay visible.
-
-    Regression: the 1s setInterval fallback queried the WRONG container
-    (.main / stAppViewContainer, scrollTop always 0 in Streamlit 1.58), so it kept
-    REMOVING .is-visible ~1s after the scroll event ADDed it — a visible flicker that
-    made the button unreliable. A stable (no-flicker) assertion catches this; the old
-    flaky test only caught a transient is-visible and masked the bug.
-    """
     page = page_at_ready
     _scroll_real_container(page, 800)
 
@@ -176,12 +174,11 @@ def test_button_stays_visible_after_scroll_no_flicker(page_at_ready) -> None:
     )
 
 
+# Clicking the visible button must scroll the real container back to the top.
+#
+# Regression: window.__consoleScrollToTop scrolled .main / stAppViewContainer — neither
+# is scrollable in Streamlit 1.58, so the click was a no-op and the page never moved.
 def test_clicking_button_scrolls_back_to_top(page_at_ready) -> None:
-    """Clicking the visible button must scroll the real container back to the top.
-
-    Regression: window.__consoleScrollToTop scrolled .main / stAppViewContainer — neither
-    is scrollable in Streamlit 1.58, so the click was a no-op and the page never moved.
-    """
     page = page_at_ready
     _scroll_real_container(page, 800)
     page.wait_for_function(

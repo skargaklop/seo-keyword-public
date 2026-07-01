@@ -46,6 +46,8 @@ from utils.seo_math_analysis import (
     compute_bm25f,
     build_field_weighted_profile,
     compute_domain_metrics,
+    lemmatize_token,
+    _tokenize_text,
 )
 from utils.validator import URLValidator
 from utils.seo_signal_analysis import (
@@ -989,7 +991,9 @@ def prepare_urls_for_seo(
         return {}
 
     status_text.text(_format_pipeline_message("pipeline_scraping_content"))
-    scraped_data = WebScraper.scrape_urls(
+    # url_llm scrape path: requests first, then cloakbrowser fallback for URLs that failed on
+    # captcha / Cloudflare Turnstile / 403 (toggle: scraper.content_browser_fallback_enabled).
+    scraped_data = WebScraper.scrape_urls_with_browser_fallback(
         valid_urls,
         progress_callback=lambda progress, message: progress_bar.progress(
             progress, text=message
@@ -1390,7 +1394,12 @@ def run_llm_url_workflow(
         return None
 
     status_text.text(_format_pipeline_message("pipeline_scraping_content"))
-    scraped_data = WebScraper.scrape_urls(
+    # url_llm_ads scrape path: requests first, then cloakbrowser fallback for URLs that
+    # hard-failed (403/timeout) or landed on a captcha / Cloudflare block page despite
+    # success=True (toggle: scraper.content_browser_fallback_enabled). Without this a
+    # site that 403-blocks the aiohttp scraper (e.g. shoptobi.com.ua) returns no keywords
+    # at all because the failed scrape skips the LLM entirely.
+    scraped_data = WebScraper.scrape_urls_with_browser_fallback(
         valid_urls,
         progress_callback=lambda progress, message: progress_bar.progress(
             0.1 + (progress * 0.3), text=message
@@ -2039,7 +2048,10 @@ def run_llm_url_keyword_extraction_stage(
         return None
 
     status_text.text(_format_pipeline_message("pipeline_scraping_content"))
-    scraped_data = WebScraper.scrape_urls(
+    # url_llm scrape path: requests first, then cloakbrowser fallback for URLs that
+    # hard-failed (403/timeout) or landed on a captcha / Cloudflare block page. See
+    # run_llm_url_workflow for the same wiring and the rationale.
+    scraped_data = WebScraper.scrape_urls_with_browser_fallback(
         valid_urls,
         progress_callback=lambda progress, message: progress_bar.progress(
             0.1 + (progress * 0.4), text=message
@@ -2820,14 +2832,30 @@ def _apply_text_analysis_profile(
     top_terms_limit: int,
 ) -> Dict[str, Any]:
     corpus_hash = _normalize_for_hashing(corpus)
+    profile["total_word_count"] = sum(
+        len(_tokenize_text(source.text, strip_suffixes)) for source in corpus
+    )
+
+    # Guarantee analysis ALWAYS runs when enabled: a document-frequency or raw-count
+    # threshold the corpus cannot satisfy (e.g. min_df=2 on a single scraped page, the
+    # url_llm_ads path) would otherwise zero out n-grams + TF-IDF — and co-occurrence /
+    # BM25F cascade from TF-IDF, so the whole report except intent would vanish. When the
+    # corpus is that small, relax both thresholds to 1 so every analysis executes; the
+    # configured values remain in force for normal multi-document corpora.
+    if len(corpus) < min_df:
+        effective_min_df = 1
+        effective_min_count = 1
+    else:
+        effective_min_df = min_df
+        effective_min_count = min_ngram_count
 
     if config.get("analyze_ngrams", True):
         for n in range(ngram_min, ngram_max + 1):
             ngrams = extract_ngrams(
                 corpus_hash=corpus_hash,
                 n=n,
-                min_count=min_ngram_count,
-                min_df=min_df,
+                min_count=effective_min_count,
+                min_df=effective_min_df,
                 strip_suffixes=strip_suffixes,
             )
             profile["ngrams_by_size"][n] = ngrams[:top_terms_limit]
@@ -2836,6 +2864,7 @@ def _apply_text_analysis_profile(
         tfidf_terms = compute_tfidf(
             corpus_hash=corpus_hash,
             strip_suffixes=strip_suffixes,
+            min_df=effective_min_df,
         )
         profile["tfidf_terms"] = tfidf_terms[:top_terms_limit]
 
@@ -2907,6 +2936,7 @@ def build_serp_math_profile(
         "has_partial_data": False,
         "bm25f_scores": [],
         "field_weighted_profile": None,
+        "total_word_count": 0,
     }
 
     if not profile["enabled"]:
@@ -3019,6 +3049,7 @@ def build_generated_text_math_profile(
         "per_row_profiles": [],
         "corpus_source": "generated_text",
         "total_rows": 0,
+        "total_word_count": 0,
     }
 
     if not profile["enabled"]:
@@ -3108,6 +3139,7 @@ def build_generated_text_math_profile(
             "tfidf_terms": [],
             "cooccurrence_terms": [],
             "intent": None,
+            "total_word_count": 0,
         }
 
         row_corpus_hash = _normalize_for_hashing(row_corpus)
@@ -3171,6 +3203,64 @@ def build_generated_text_math_profile(
     )
 
 
+def build_scraped_text_math_profile(
+    scraped_content: Optional[Dict[str, str]],
+    config_override: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    config = {**SEO_MATH_CONFIG, **(config_override or {})}
+    profile: Dict[str, Any] = {
+        "enabled": config.get("enabled", False),
+        "analyze_scraped_text": config.get("analyze_scraped_text", False),
+        "info_message": "",
+        "ngrams_by_size": {},
+        "tfidf_terms": [],
+        "cooccurrence_terms": [],
+        "intent": None,
+        "bm25f_scores": [],
+        "field_weighted_profile": None,
+        "corpus_source": "scraped_text",
+        "total_rows": 0,
+        "total_word_count": 0,
+    }
+
+    if not profile["enabled"]:
+        profile["info_message"] = "SEO mathematical analysis is disabled in settings."
+        return profile
+    if not profile["analyze_scraped_text"]:
+        return profile
+    if not scraped_content:
+        profile["info_message"] = "No scraped text available for analysis."
+        return profile
+
+    strip_suffixes = bool(config.get("strip_suffixes", False))
+    corpus: List[TextSource] = [
+        TextSource(
+            text=str(text),
+            field="body_text",
+            weight=1.0,
+            provenance_url=str(url),
+        )
+        for url, text in scraped_content.items()
+        if str(text or "").strip()
+    ]
+    if not corpus:
+        profile["info_message"] = "No scraped text available for analysis."
+        return profile
+
+    profile["total_rows"] = len(corpus)
+    return _apply_text_analysis_profile(
+        profile=profile,
+        corpus=corpus,
+        config=config,
+        strip_suffixes=strip_suffixes,
+        ngram_min=int(config.get("ngram_min", 1)),
+        ngram_max=int(config.get("ngram_max", 3)),
+        min_ngram_count=int(config.get("min_ngram_count", 2)),
+        min_df=int(config.get("min_document_frequency", 2)),
+        top_terms_limit=int(config.get("top_terms_limit", 30)),
+    )
+
+
 # block_pipeline_reverse_math_report: SERP and Ads outputs feed a mathematical report
 # Semantic block: SERP text drives corpus math while Ads keyword metrics remain enrichment columns, never text evidence.
 
@@ -3209,6 +3299,23 @@ def _ads_enrichment_rows(ads_df: Optional[pd.DataFrame]) -> List[Dict[str, Any]]
     return rows
 
 
+# FUNCTION_CONTRACT: _lemmatize_phrase
+# Purpose: Reduce a multi-word keyword phrase to its lemma form (space-joined lemmas) using the same morphology used by the SERP math pipeline, so Ads keywords can be matched against lemmatized SERP terms.
+# Input: phrase (str)
+# Output: str — the lowercased lemma phrase (e.g. "seo tools" -> "seo tool"); the original phrase lowercased when lemmatization yields nothing usable
+# Side Effects: (none)
+# Business Rules: Tokenizes via the shared _tokenize_text chokepoint with strip_suffixes=True so it stays consistent with how SERP n-grams/tfidf terms are built; multi-word phrases join each token's lemma with a single space; when the optional lemmatizer libs are absent lemmatize_token is the identity, so this degrades gracefully to the lowercased original tokens
+# Failure Modes: never raises; returns the lowercased phrase when empty or when tokenization yields no tokens
+# LINKS: PLAN 08-03 Task 5, PLAN 10-02 Task 4
+def _lemmatize_phrase(phrase: str) -> str:
+    if not phrase:
+        return ""
+    tokens = _tokenize_text(phrase, True)
+    if not tokens:
+        return phrase.strip().lower()
+    return " ".join(lemmatize_token(token) for token in tokens)
+
+
 # FUNCTION_CONTRACT: _serp_text_terms_from_profile
 # Purpose: Extract SERP-derived candidate terms from a math profile.
 # Input: profile (Dict[str, Any])
@@ -3234,9 +3341,9 @@ def _serp_text_terms_from_profile(profile: Dict[str, Any]) -> List[str]:
 # Input: serp_df, serp_related_data, ads_df
 # Output: Dict[str, Any]
 # Side Effects: none
-# Business Rules: Ads metrics are enrichment only and never enter TF-IDF, n-gram, or co-occurrence corpus calculations.
+# Business Rules: Ads metrics are enrichment only and never enter TF-IDF, n-gram, or co-occurrence corpus calculations. overlap_keywords / ads_only_keywords / serp_only_terms match SERP terms against Ads keywords on a shared lemma key when SEO_MATH_CONFIG.strip_suffixes is on (so an inflected Ads keyword matches a lemmatized SERP term), and on raw lowercased form when it is off; reported values always keep the original surface form.
 # Failure Modes: Empty/missing inputs return a structured info message instead of raising.
-# LINKS: PLAN 08-03 Task 5
+# LINKS: PLAN 08-03 Task 5, PLAN 10-02 Task 4
 def build_reverse_math_report(
     serp_df: Optional[pd.DataFrame] = None,
     serp_related_data: Optional[List[Dict[str, str]]] = None,
@@ -3246,10 +3353,27 @@ def build_reverse_math_report(
     ads_enrichment = _ads_enrichment_rows(ads_df)
     serp_text_terms = _serp_text_terms_from_profile(serp_profile)
 
-    serp_terms_normalized = {term.lower(): term for term in serp_text_terms}
-    ads_keywords = [row["Keyword"] for row in ads_enrichment]
-    ads_keywords_normalized = {keyword.lower(): keyword for keyword in ads_keywords}
-    overlap_keys = sorted(set(serp_terms_normalized) & set(ads_keywords_normalized))
+    # Match SERP terms against Ads keywords on a shared key so inflectional differences
+    # don't hide overlaps. When strip_suffixes is on the SERP terms are already lemmas, so
+    # the Ads keywords must be lemmatized to the same form (the user's directive: ALL the
+    # math must respect lemmatisation). When it is off both sides use the raw lowercased
+    # form, preserving the prior verbatim matching behavior. Reported values keep the
+    # original surface form so users see the keyword they typed.
+    strip_suffixes = bool(SEO_MATH_CONFIG.get("strip_suffixes", False))
+
+    def _term_match_key(text: str) -> str:
+        return _lemmatize_phrase(text) if strip_suffixes else text.strip().lower()
+
+    # Map match-key -> original surface form (first occurrence wins on collision).
+    serp_by_key: Dict[str, str] = {}
+    for term in serp_text_terms:
+        serp_by_key.setdefault(_term_match_key(term), term)
+    ads_by_key: Dict[str, str] = {}
+    for row in ads_enrichment:
+        keyword = row["Keyword"]
+        ads_by_key.setdefault(_term_match_key(keyword), keyword)
+
+    overlap_keys = sorted(set(serp_by_key) & set(ads_by_key))
 
     report = {
         "serp_profile": serp_profile,
@@ -3257,16 +3381,16 @@ def build_reverse_math_report(
         "ads_as_enrichment": True,
         "ads_metrics_used_as_text": False,
         "text_evidence_terms": serp_text_terms,
-        "overlap_keywords": [ads_keywords_normalized[key] for key in overlap_keys],
+        "overlap_keywords": [ads_by_key[key] for key in overlap_keys],
         "ads_only_keywords": [
-            keyword
-            for key, keyword in sorted(ads_keywords_normalized.items())
-            if key not in serp_terms_normalized
+            ads_by_key[key]
+            for key in sorted(ads_by_key)
+            if key not in serp_by_key
         ],
         "serp_only_terms": [
-            term
-            for key, term in sorted(serp_terms_normalized.items())
-            if key not in ads_keywords_normalized
+            serp_by_key[key]
+            for key in sorted(serp_by_key)
+            if key not in ads_by_key
         ],
         "info_message": "",
     }
@@ -3323,6 +3447,7 @@ def _build_profile_from_sources(
         "intent": None,
         "bm25f_scores": [],
         "field_weighted_profile": None,
+        "total_word_count": 0,
     }
     if not corpus:
         return profile
@@ -3334,6 +3459,9 @@ def _build_profile_from_sources(
     min_ngram_count = int(config.get("min_ngram_count", 1))
     min_df = int(config.get("min_document_frequency", 1))
     corpus_hash = _normalize_for_hashing(corpus)
+    profile["total_word_count"] = sum(
+        len(_tokenize_text(source.text, strip_suffixes)) for source in corpus
+    )
 
     if config.get("analyze_ngrams", True):
         for n in range(ngram_min, ngram_max + 1):
@@ -3562,10 +3690,7 @@ def build_crawl_math_report(crawl_result: CrawlResult) -> Dict[str, Any]:
 
         # Content effort (aggregate across pages)
         if signals_config.get("content_effort", True):
-            total_word_count = sum(
-                pg.get("signals").word_count if pg.get("signals") else 0
-                for pg in report["pages"]
-            )
+            total_word_count = int(aggregate_profile.get("total_word_count", 0) or 0)
             total_list_count = sum(
                 pg.get("signals").list_count if pg.get("signals") else 0
                 for pg in report["pages"]

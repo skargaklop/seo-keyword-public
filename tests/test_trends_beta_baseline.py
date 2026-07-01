@@ -18,13 +18,12 @@ from utils.browser_scraper import BrowserScraper, BrowserScraperConfig
 # patch("cloakbrowser.launch") requires the package to be importable, which fails on a
 # clean install. Inject a fake module into sys.modules instead so both installed and
 # uninstalled environments run the same code path.
+# Return a context manager exposing a fake ``cloakbrowser.launch``.
+#
+# ``launch_mock`` is whatever the source's ``from cloakbrowser import launch``
+# should resolve to (a MagicMock, or a real callable). The returned object is a
+# context manager to be used in a ``with`` statement.
 def _patch_cloakbrowser_launch(launch_mock):
-    """Return a context manager exposing a fake ``cloakbrowser.launch``.
-
-    ``launch_mock`` is whatever the source's ``from cloakbrowser import launch``
-    should resolve to (a MagicMock, or a real callable). The returned object is a
-    context manager to be used in a ``with`` statement.
-    """
     fake_module = MagicMock()
     fake_module.launch = launch_mock
     return patch.dict("sys.modules", {"cloakbrowser": fake_module})

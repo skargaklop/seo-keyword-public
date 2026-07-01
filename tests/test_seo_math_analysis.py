@@ -13,7 +13,7 @@
 # Key Semantic Blocks: none.
 # Critical Flows: build text sources -> run math algorithms -> assert scores and removed-setting behavior.
 # Verification: verification-plan.xml#V-10-MATH-BM25F, verification-plan.xml#V-12-SUFFIX-REMOVAL
-# CHANGE_SUMMARY: Added GRACE module contract linking this test file to MOD-012 and MOD-011.
+# CHANGE_SUMMARY: Added GRACE module contract linking this test file to MOD-012 and MOD-011; added test_cooccurrence_strips_suffixes_when_enabled + test_cooccurrence_enabled_catches_more_inflections covering the closed lemmatization gap in co-occurrence (_build_cooccurrence_matrix now threads strip_suffixes).
 
 from utils.seo_math_analysis import (
     TextSource,
@@ -39,6 +39,7 @@ from utils.seo_math_analysis import (
     _get_default_stopwords,
     _parse_generated_sections,
     _calculate_keyword_density,
+    _lemmatized_contains,
     _check_forbidden_phrases,
     _normalize_for_hashing,
     _get_field_b_param,
@@ -280,6 +281,33 @@ class TestTokenization:
 
         assert tokens_no_strip != tokens_with_strip
 
+    # Purpose: STRICT mode (strip_suffixes=False) is a plain case-insensitive substring
+    # check — identical to the behavior before lemmatization was threaded into _score_element,
+    # so existing scoring is unaffected when the user disables suffix stripping.
+    def test_lemmatized_contains_strict_is_raw_substring(self):
+        assert _lemmatized_contains("Best SEO Tools", "seo tools", strip_suffixes=False) is True
+        assert _lemmatized_contains("Best SEO Tools", "Software", strip_suffixes=False) is False
+        assert _lemmatized_contains("", "x", strip_suffixes=False) is False
+        assert _lemmatized_contains("abc", "", strip_suffixes=False) is False
+
+    # Purpose: STRICT mode does NOT collapse inflections — an inflected element must NOT
+    # match the lemma keyword. This is the user's "raw analysis" mode.
+    def test_lemmatized_contains_strict_does_not_lemmatize(self):
+        # lemma "кроссовок" is NOT a substring of inflected "кроссовки"
+        assert _lemmatized_contains("кроссовки мужские", "кроссовок", strip_suffixes=False) is False
+        # the inflected form itself still matches verbatim
+        assert _lemmatized_contains("кроссовки мужские", "кроссовки", strip_suffixes=False) is True
+
+    # Purpose: BROAD mode (strip_suffixes=True) collapses both sides to lemmas so an
+    # inflected element matches the lemma keyword — the user's "lemmatized analysis" mode.
+    @_lemmatizer_skip
+    def test_lemmatized_contains_broad_lemmatizes(self):
+        assert _lemmatized_contains("кроссовки мужские", "кроссовок", strip_suffixes=True) is True
+        # multi-word lemma needle: contiguous lemma sequence must appear
+        assert _lemmatized_contains("купите кроссовки мужские", "кроссовки мужские", strip_suffixes=True) is True
+        # lemma sequence not contiguous in the haystack -> no match
+        assert _lemmatized_contains("кроссовки дешевые мужские", "кроссовки мужские", strip_suffixes=True) is False
+
 
 # Purpose: Test stopword lists for ru/uk/en.
 class TestStopwords:
@@ -456,8 +484,9 @@ class TestTfidfComputation:
 
         assert scores == sorted(scores, reverse=True)
 
-    # Purpose: Test terms appearing in only one document are filtered.
-    def test_tfidf_filters_single_doc_terms(self):
+    # Purpose: By default (min_df=1) every term is retained — analysis always runs.
+    # Callers wanting cross-document recurrence pass min_df=2 explicitly.
+    def test_tfidf_default_keeps_single_doc_terms(self):
         corpus = [
             TextSource(text="SEO tools", field="title", weight=3.0),
             TextSource(text="keyword research", field="snippet", weight=1.5),
@@ -465,13 +494,51 @@ class TestTfidfComputation:
         corpus_hash = _normalize_for_hashing(corpus)
         results = compute_tfidf(corpus_hash)
 
-        for result in results:
-            assert result.doc_frequency >= 2
+        terms = {r.term for r in results}
+        # Single-document terms survive under the default min_df=1.
+        assert {"seo", "tools", "keyword", "research"}.issubset(terms)
+
+        # Explicit min_df=2 filters them back out.
+        filtered = compute_tfidf(corpus_hash, min_df=2)
+        assert filtered == []
 
     # Purpose: Test empty corpus returns empty list.
     def test_tfidf_empty_corpus(self):
         results = compute_tfidf(tuple())
         assert results == []
+
+    # Purpose: Regression — math analysis must ALWAYS run when enabled, even for a
+    # single-document corpus (the scraped-text / url_llm_ads path feeds 1 document).
+    # The former hardcoded `df < 2` filter guaranteed an empty result for any 1-doc
+    # corpus, so the report showed only intent. A single rich document must yield terms.
+    def test_tfidf_single_document_corpus_yields_terms(self):
+        corpus = [
+            TextSource(text="best SEO tools for keyword research and analysis", field="title", weight=3.0),
+        ]
+        corpus_hash = _normalize_for_hashing(corpus)
+        results = compute_tfidf(corpus_hash)
+        assert len(results) > 0
+        terms = {r.term for r in results}
+        # Content words from the document must survive — not be filtered by df.
+        assert {"tools", "keyword", "research"}.issubset(terms)
+
+    # Purpose: The minimum-document-frequency filter must be configurable via min_df,
+    # defaulting to 1 (run always). Callers can still raise it to 2 for SERP corpora.
+    def test_tfidf_min_df_parameter_defaults_to_one(self):
+        corpus = [
+            TextSource(text="alpha beta", field="title", weight=3.0),
+            TextSource(text="gamma delta", field="snippet", weight=1.5),
+        ]
+        corpus_hash = _normalize_for_hashing(corpus)
+
+        # Default: every term appears (min_df=1) — no filtering of single-doc terms.
+        default_results = compute_tfidf(corpus_hash)
+        default_terms = {r.term for r in default_results}
+        assert {"alpha", "beta", "gamma", "delta"}.issubset(default_terms)
+
+        # Explicit min_df=2 keeps only terms appearing in >= 2 documents (none here).
+        filtered = compute_tfidf(corpus_hash, min_df=2)
+        assert filtered == []
 
 
 # Purpose: Test co-occurrence term analysis (NOT true LSI/SVD).
@@ -532,6 +599,60 @@ class TestCooccurrenceAnalysis:
     def test_cooccurrence_empty_corpus(self):
         results = compute_cooccurrence_terms(tuple(), seed_terms=("seo",))
         assert results == []
+
+    # Purpose: strip_suffixes must thread into the co-occurrence matrix so inflected
+    # Cyrillic forms collapse onto one lemma, mirroring n-grams/TF-IDF/intent/BM25F.
+    # pymorphy3 reliably collapses Russian "доставка" and its instrumental "доставкою"
+    # to the same lemma "доставка". The seed "магазин" is lemma-stable (its surface form
+    # equals its lemma), so it keys the matrix identically in both modes; this isolates
+    # the test to the matrix's tokenization, not seed lookup. With strip ON the two
+    # surface forms must surface as ONE term "доставка" (not two separate rows).
+    @_lemmatizer_skip
+    def test_cooccurrence_strips_suffixes_when_enabled(self):
+        corpus = [
+            TextSource(
+                text="магазин доставкой и доставкою курьером",
+                field="title",
+                weight=3.0,
+            ),
+        ]
+        corpus_hash = _normalize_for_hashing(corpus)
+        compute_cooccurrence_terms.cache_clear()
+        results = compute_cooccurrence_terms(corpus_hash, seed_terms=("магазин",), strip_suffixes=True)
+
+        terms = {r.term for r in results}
+        assert "доставка" in terms, f"lemma 'доставка' missing; got {terms}"
+        assert "доставкою" not in terms, f"inflected 'доставкою' should have collapsed; got {terms}"
+
+    # Purpose: The strip_suffixes flag is the morphology toggle, identical in spirit to
+    # the intent matcher. ENABLED (broad) must collapse inflections and therefore
+    # register MORE co-occurring signal than DISABLED (strict), proving the flag is
+    # actually consumed by the matrix builder rather than dropped on the floor. The
+    # lemma-stable seed "магазин" keys both modes identically.
+    @_lemmatizer_skip
+    def test_cooccurrence_enabled_catches_more_inflections(self):
+        corpus = [
+            TextSource(
+                text="магазин доставкой и доставкою курьером",
+                field="title",
+                weight=3.0,
+            ),
+        ]
+        corpus_hash = _normalize_for_hashing(corpus)
+        compute_cooccurrence_terms.cache_clear()
+        off = compute_cooccurrence_terms(corpus_hash, seed_terms=("магазин",), strip_suffixes=False)
+        compute_cooccurrence_terms.cache_clear()
+        on = compute_cooccurrence_terms(corpus_hash, seed_terms=("магазин",), strip_suffixes=True)
+
+        # Strict mode splits the signal across two surface forms; broad mode aggregates
+        # both onto the single lemma "доставка", so broad count strictly exceeds the
+        # sum of strict's two rows.
+        off_count = sum(r.cooccurrence_count for r in off if r.term in ("доставка", "доставкою"))
+        on_count = sum(r.cooccurrence_count for r in on if r.term == "доставка")
+        assert on_count > off_count, (
+            f"ENABLED should aggregate inflections onto one lemma with a higher count: "
+            f"on={on_count}, off={off_count}"
+        )
 
 
 # Purpose: Test intent analysis with confidence metric.
@@ -760,14 +881,40 @@ class TestIntentAnalysis:
         assert result.confidence > 0.05
         assert len(result.signals) >= 3
 
-    # Purpose: strip_suffixes is the morphology toggle for intent. The direction is
-    # INVERTED versus naive intuition: DISABLED (False) is the STRICT mode (exact
-    # token == stem equality, no inflection collapsing), while ENABLED (True) is the
-    # BROAD mode (lemmatize then prefix-match so inflected forms collapse onto a
-    # stem). With real lemmatization available, a corpus of purely inflected
-    # transactional verbs must score HIGHER under ENABLED than under DISABLED —
-    # proving the toggle makes the broad mode actually catch MORE.
-    def test_intent_disabled_is_strict_enabled_is_broad(self):
+    # Purpose: REGRESSION for the production bug where SERP/generated-text corpora
+    # full of inflected Ukrainian/Russian "buy" words (купити, замовлення) were left
+    # UNCLASSIFIED (intent=undetermined, score 0) in the DEFAULT strict mode
+    # (strip_suffixes=False). The Cyrillic stem sets are PREFIX stems ("куп", "замов"),
+    # so strict mode must prefix-match them, not demand exact equality. The corpus
+    # here mirrors the user's exported math report (дерев'яна стружка / купити).
+    def test_intent_cyrillic_inflected_buy_classifies_in_default_strict_mode(self):
+        corpus = [
+            TextSource(
+                text="Дерев'яна стружка для упаковки: наповнювач у коробки. Ви можете купити стружку деревну для оформлення пакунків.",
+                field="title",
+                weight=3.0,
+            ),
+            TextSource(
+                text="Каталожна позиція доступна для швидкого замовлення. Захист та декор вашої продукції.",
+                field="snippet",
+                weight=2.0,
+            ),
+        ]
+        corpus_hash = _normalize_for_hashing(corpus)
+        analyze_intent.cache_clear()
+        result = analyze_intent(corpus_hash, strip_suffixes=False)
+        # MUST NOT be undetermined — the corpus is unambiguously purchase-oriented.
+        assert result.intent_type != "undetermined"
+        assert result.score > 0
+        # The "куп" prefix stem must register from the inflected "купити".
+        assert "куп" in result.signals
+
+    # Purpose: strip_suffixes toggles morphology collapsing. STRICT (False) prefix-
+    # matches the RAW token; BROAD (True) prefix-matches the LEMMATIZED token, which
+    # is a superset (it also collapses irregular root alternations). For regular
+    # Slavic inflections the two coincide, so broad must score AT LEAST as much as
+    # strict — and strict must be nonzero, proving the classifier works out of the box.
+    def test_intent_broad_mode_is_superset_of_strict(self):
         corpus = [
             TextSource(text="купил заказал оплатил доставлено", field="title", weight=3.0),
             TextSource(text="покупка товаров со скидкою и акциями", field="snippet", weight=2.0),
@@ -777,23 +924,40 @@ class TestIntentAnalysis:
         off = analyze_intent(corpus_hash, strip_suffixes=False)
         analyze_intent.cache_clear()
         on = analyze_intent(corpus_hash, strip_suffixes=True)
-        # ENABLED (broad) must catch MORE transactional signal than DISABLED (strict).
-        assert on.score > off.score
+        # Strict mode now catches the inflected verbs (bug fix) -> nonzero.
+        assert off.score > 0
+        assert "куп" in off.signals
+        # Broad (lemma-based) is a superset of strict (raw-prefix).
+        assert on.score >= off.score
 
-    # Purpose: With strip_suffixes DISABLED (strict mode), matching is exact equality
-    # against a canonical stem — no morphology collapsing. The inflected verb "купить"
-    # is NOT equal to the stem "куп", so it must not register that signal under strict
-    # mode. This guards against the matcher quietly falling back to prefix matching.
-    def test_intent_disabled_exact_match_only(self):
+    # Purpose: STRICT mode (strip_suffixes=False) prefix-matches inflected Cyrillic
+    # forms against the prefix stems — the inflected verb "купить" starts with the
+    # stem "куп", so the signal MUST register. This locks in the corrected contract
+    # (the old exact-equality premise left the whole UA/RU market unclassified).
+    def test_intent_strict_mode_prefix_matches_inflected_cyrillic(self):
         corpus = [
             TextSource(text="купить заказать оплатить", field="title", weight=3.0),
         ]
         corpus_hash = _normalize_for_hashing(corpus)
         analyze_intent.cache_clear()
         off = analyze_intent(corpus_hash, strip_suffixes=False)
-        # Strict mode: inflected forms never equal the bare stem, so the "куп" signal
-        # is absent (or the intent is undetermined with no transactional signal).
-        assert "куп" not in off.signals
+        assert "куп" in off.signals
+        assert off.intent_type == "transactional"
+
+    # Purpose: Guard against a false-positive introduced by reverse prefix matching in
+    # STRICT mode. A single-letter Cyrillic fragment like "г" (the unit, from "250 г")
+    # must NOT register the navigational stem "головн" via stem.startswith("г"). The
+    # strict matcher matches only the FORWARD direction (inflected form starts with the
+    # root stem), never a raw fragment being a prefix of a long stem.
+    def test_intent_strict_mode_no_false_positive_on_short_fragment(self):
+        corpus = [
+            TextSource(text="наповнювач 250 г в коробці", field="snippet", weight=2.0),
+        ]
+        corpus_hash = _normalize_for_hashing(corpus)
+        analyze_intent.cache_clear()
+        result = analyze_intent(corpus_hash, strip_suffixes=False)
+        # The "г" fragment must never inflate a navigational signal.
+        assert not any(s.startswith("nav:головн") for s in result.signals)
 
 
 # Purpose: Test the lazy-loaded real lemmatizer (pymorphy3 + simplemma) that powers
@@ -1098,6 +1262,21 @@ DESCRIPTION: <p>This is a comprehensive review of SEO software.</p>
         density = _calculate_keyword_density(text, "seo")
         assert density > 0
 
+    # Purpose: When strip_suffixes=True, density must count ALL inflections of the
+    # keyword as the same lemma. pymorphy3 collapses Russian кроссовки/кроссовках/кроссовок
+    # to one lemma "кроссовок", so a text containing three surface forms must register a
+    # higher density than raw-token counting (which sees them as three distinct tokens and
+    # counts none of them toward the lemma keyword). Guards against the tokenizer being
+    # hardcoded to False inside _calculate_keyword_density.
+    @_lemmatizer_skip
+    def test_keyword_density_strips_suffixes_when_enabled(self):
+        text = "кроссовки кроссовках кроссовок здесь"
+        lemma = lemmatize_token("кроссовки")  # -> кроссовок
+        off = _calculate_keyword_density(text, lemma, strip_suffixes=False)
+        on = _calculate_keyword_density(text, lemma, strip_suffixes=True)
+        assert on > off, f"ENABLED should collapse inflections onto the lemma: on={on}, off={off}"
+        assert on > 0, f"ENABLED should find the lemma in inflected text: on={on}"
+
     # Purpose: Test forbidden phrases detection.
     def test_forbidden_phrases_check(self):
         text = "Click here to learn more about our products."
@@ -1131,6 +1310,95 @@ DESCRIPTION: <p>This is a comprehensive review of SEO software.</p>
         scores = score_generated_text(generated, "alpha-11", profile)
 
         assert scores["META_TITLE"].keyword_coverage > 0
+
+    # Purpose: When strip_suffixes=True, score_generated_text must tokenize the generated
+    # text to lemmas so its BM25F coverage actually matches the lemmatized SERP query
+    # terms. The SERP profile's top_ngrams are lemmas (built by the lemmatizing pipeline),
+    # so generated text written in inflected Cyrillic ("кроссовки") must collapse to the
+    # lemma "кроссовок" to register BM25F coverage. Guards against score_generated_text
+    # calling compute_bm25f with the strip_suffixes flag dropped (defaults to False).
+    @_lemmatizer_skip
+    def test_score_generated_text_bm25f_lemmatizes_when_enabled(self):
+        generated = (
+            "META_TITLE: Кроссовки мужские для активного спорта и бега\n"
+            "META_DESCRIPTION: Купите кроссовки мужские недорого с доставкой\n"
+            "H1: Кроссовки мужские\n"
+            "DESCRIPTION: Кроссовки кроссовки кроссовки кроссовки кроссовки"
+        )
+        profile = {
+            "top_ngrams": ["кроссовок"],
+            "tfidf_terms": ["кроссовок"],
+            "cooccurrence_terms": [],
+            "tfidf_overlap": 0.5,
+            "cooccurrence_coverage": 0.6,
+            "meta_title": "",
+        }
+
+        scores = score_generated_text(
+            generated, "кроссовок", profile, enable_bm25f=True, strip_suffixes=True
+        )
+
+        # The DESCRIPTION element has 5 surface occurrences; with strip ON they collapse
+        # to the lemma and must register non-zero BM25F coverage of the lemma query term.
+        assert scores["DESCRIPTION"].bm25f_coverage is not None, (
+            "BM25F coverage must be computed; got None"
+        )
+        assert scores["DESCRIPTION"].bm25f_coverage > 0, (
+            f"ENABLED should match the lemmatized query term in inflected text: "
+            f"coverage={scores['DESCRIPTION'].bm25f_coverage}"
+        )
+
+    # Purpose: When strip_suffixes=True, _score_element's keyword-presence and n-gram
+    # coverage checks must lemmatize BOTH the element text and the profile terms, so an
+    # inflected generated element ("Кроссовки мужские") matches the lemma-form keyword /
+    # n-grams ("кроссовок") from the lemmatized SERP profile. Currently these checks use
+    # raw .lower() substring matching, so an inflected element registers the lemma keyword
+    # as absent (primary_keyword_present=False, keyword_coverage=0) even though it is
+    # present. This test locks the corrected behavior. "кроссовки" is chosen because its
+    # lemma "кроссовок" is NOT a substring of the inflected form, so raw matching fails
+    # while lemmatized matching succeeds (isolates the fix from prefix-substring luck).
+    @_lemmatizer_skip
+    def test_score_element_lemmatizes_keyword_presence_and_coverage(self):
+        # pymorphy3 reliably maps "кроссовки" -> "кроссовок", and "кроссовок" is NOT a
+        # substring of "кроссовки", so an element written in the inflected form only
+        # matches the lemma primary keyword under lemmatization.
+        lemma = lemmatize_token("кроссовки")  # -> кроссовок
+        assert lemma == "кроссовок", (
+            f"test precondition: pymorphy3 must lemmatize кроссовки -> кроссовок; got {lemma!r}"
+        )
+        generated = (
+            "META_TITLE: Кроссовки мужские для активного спорта\n"
+            "META_DESCRIPTION: Купите кроссовки мужские недорого\n"
+            "H1: Кроссовки мужские\n"
+            "DESCRIPTION: "
+            "кроссовки кроссовки кроссовки кроссовки кроссовки кроссовки кроссовки "
+            "кроссовки кроссовки кроссовки кроссовки кроссовки кроссовки кроссовки"
+        )
+        profile = {
+            "top_ngrams": [lemma],
+            "tfidf_terms": [lemma],
+            "cooccurrence_terms": [],
+            "tfidf_overlap": 0.5,
+            "cooccurrence_coverage": 0.6,
+            "meta_title": "",
+        }
+
+        scores = score_generated_text(
+            generated, lemma, profile, enable_bm25f=False, strip_suffixes=True
+        )
+
+        # The lemma keyword IS present (in inflected form) in every element, so the
+        # lemmatizing check must NOT flag it as missing and must record non-zero coverage.
+        for element_type in ("META_TITLE", "META_DESCRIPTION", "H1", "DESCRIPTION"):
+            elem = scores[element_type]
+            assert elem.primary_keyword_present is True, (
+                f"{element_type}: ENABLED should match lemma keyword '{lemma}' in "
+                f"inflected text; got primary_keyword_present=False"
+            )
+        assert scores["H1"].keyword_coverage > 0, (
+            f"H1: ENABLED should count the lemma n-gram in inflected text; "
+            f"keyword_coverage={scores['H1'].keyword_coverage}"
+        )
 
 
 # Purpose: Test memoization cache behavior.

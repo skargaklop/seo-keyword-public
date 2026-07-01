@@ -128,9 +128,17 @@ class TestExtractMatchDomain:
     def test_net_ua(self):
         assert extract_match_domain("https://example.net.ua") == "example.net.ua"
 
-    # Purpose: Test ru two level tld
-    def test_ru_two_level_tld(self):
+    # Purpose: Test ru 2LD behavior under the Public Suffix List.
+    # NOTE: com.ru/net.ru/org.ru/pp.ru are classified as PSL *private* domains. With
+    # include_psl_private_domains=True (the configured setting), they are treated as
+    # suffixes, so example.com.ru -> example.com.ru (registrable), NOT com.ru. This
+    # diverges from browser cookie scope but matches SEO/registrant expectations for
+    # RU/UA domains and is the behavior the user explicitly requested.
+    def test_ru_private_2ld_treated_as_suffixes(self):
         assert extract_match_domain("https://example.com.ru") == "example.com.ru"
+        assert extract_match_domain("https://example.net.ru") == "example.net.ru"
+        assert extract_match_domain("https://example.org.ru") == "example.org.ru"
+        assert extract_match_domain("https://example.pp.ru") == "example.pp.ru"
 
     # Purpose: Test co uk
     def test_co_uk(self):

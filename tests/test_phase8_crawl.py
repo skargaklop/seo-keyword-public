@@ -443,6 +443,10 @@ def test_build_crawl_math_report_groups_pages_and_aggregate(
 
     assert report["info_message"] == ""
     assert len(report["pages"]) == 2
+    # total_word_count spans the full analyzed corpus (title + headings + body per page):
+    #   p1: "SEO audit tools"(3) + "Keyword research"(2) + body(5) = 10
+    #   p2: "SEO audit checklist"(3) + "SEO services"(2) + body(5) = 10  ->  20 total
+    assert report["aggregate_profile"]["total_word_count"] == 20
     assert report["aggregate_profile"]["ngrams_by_size"]
     assert report["keyword_candidates"]
 
@@ -509,7 +513,7 @@ def test_render_crawl_math_report_labels_page_summary_fields(
         subheader=_record("subheader"),
         info=_record("info"),
         metric=_record("metric"),
-        columns=lambda count: (_Column(), _Column(), _Column()),
+        columns=lambda count: tuple(_Column() for _ in range(count)),
         dataframe=_record("dataframe"),
         expander=lambda *args, **kwargs: nullcontext(),
         markdown=_record("markdown"),
@@ -529,6 +533,7 @@ def test_render_crawl_math_report_labels_page_summary_fields(
             "crawl_pages_stat": "Pages",
             "crawl_visited_stat": "Visited",
             "crawl_errors_stat": "Errors",
+            "seo_math_total_words_label": "Total Words",
             "crawl_page_details": "Report Pages",
             "crawl_page_title_label": "Title",
             "crawl_page_url_label": "URL",
@@ -643,6 +648,8 @@ def test_render_crawl_math_report_uses_full_aggregate_profile_without_fixed_slic
             "crawl_visited_stat": "Visited",
             "crawl_errors_stat": "Errors",
             "crawl_aggregate_terms": "Aggregate terms",
+            "seo_math_total_words_label": "Total Words",
+            "seo_math_density_pct_label": "Density %",
             "crawl_ngram_details": "N-gram details",
             "crawl_page_details": "Page details",
             "crawl_page_title_label": "Title",
@@ -663,6 +670,7 @@ def test_render_crawl_math_report_uses_full_aggregate_profile_without_fixed_slic
         "info_message": "",
         "crawl": SimpleNamespace(pages=[1], visited_count=1, errors=[]),
         "aggregate_profile": {
+            "total_word_count": 40,
             "tfidf_terms": tfidf_terms,
             "ngrams_by_size": {1: ngrams},
             "related_searches": [],
@@ -688,7 +696,8 @@ def test_render_crawl_math_report_uses_full_aggregate_profile_without_fixed_slic
     dataframe_calls = [value for name, value in calls if name == "dataframe"]
     assert any(getattr(df, "shape", (0, 0))[0] == 20 for df in dataframe_calls)
     assert any(
-        list(getattr(df, "columns", [])) == ["N-gram", "Count", "Weighted", "DF"]
+        list(getattr(df, "columns", []))
+        == ["N-gram", "Count", "Total Words", "Density %", "Weighted", "DF"]
         and getattr(df, "shape", (0, 0))[0] == 20
         for df in dataframe_calls
     )
@@ -958,6 +967,67 @@ def test_reverse_math_report_treats_ads_metrics_as_enrichment(
     assert "999999" not in report["text_evidence_terms"]
     assert "seo tools" in report["overlap_keywords"]
     assert "content gap" in report["ads_only_keywords"]
+
+
+def test_reverse_math_report_overlap_respects_lemmatization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # When strip_suffixes is enabled, SERP text terms are lemmatized (e.g. "SEO tools"
+    # -> bigram "seo tool", singular) but the Ads keyword stays as the user-typed
+    # "seo tools" (plural). The reverse-math report must still recognize these as the
+    # SAME keyword — the user's directive is "ALL the math must respect lemmatisation".
+    # So an Ads keyword that differs from a SERP term only by inflection must be reported
+    # in overlap_keywords (using the original Ads surface form), not in ads_only_keywords.
+    import pandas as pd
+
+    from utils.pipeline import SEO_MATH_CONFIG, build_reverse_math_report
+
+    monkeypatch.setitem(SEO_MATH_CONFIG, "strip_suffixes", True)
+
+    ads_df = pd.DataFrame(
+        {
+            "Keyword": ["seo tools", "content gap"],
+            "Avg Monthly Searches": [999999, 500],
+            "Competition": ["HIGH", "LOW"],
+        }
+    )
+
+    report = build_reverse_math_report(_serp_fixture_df(), [], ads_df)
+
+    # "seo tools" overlaps SERP text (lemmatized to "seo tool"); report the original form.
+    assert "seo tools" in report["overlap_keywords"], (
+        f"ENABLED should match inflected Ads keyword to lemmatized SERP term; "
+        f"overlap_keywords={report['overlap_keywords']}"
+    )
+    # "content gap" is not in the SERP fixture text, so it remains ads-only.
+    assert "content gap" in report["ads_only_keywords"]
+
+
+def test_reverse_math_report_overlap_strict_uses_raw_matching(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # When strip_suffixes is explicitly OFF, overlap uses raw lowercased matching — an
+    # Ads keyword "seo tools" matches the SERP bigram "seo tools" verbatim, and a
+    # deliberately singular Ads form "seo tool" must NOT match (it would only match under
+    # lemmatization). Locks the user's "disable it and get raw analysis" guarantee.
+    import pandas as pd
+
+    from utils.pipeline import SEO_MATH_CONFIG, build_reverse_math_report
+
+    monkeypatch.setitem(SEO_MATH_CONFIG, "strip_suffixes", False)
+
+    ads_df = pd.DataFrame(
+        {
+            "Keyword": ["seo tools", "seo tool"],
+            "Avg Monthly Searches": [1000, 500],
+        }
+    )
+
+    report = build_reverse_math_report(_serp_fixture_df(), [], ads_df)
+
+    # "seo tools" matches verbatim; singular "seo tool" does NOT (raw mode).
+    assert "seo tools" in report["overlap_keywords"]
+    assert "seo tool" in report["ads_only_keywords"]
 
 
 def test_reverse_math_report_ads_only_does_not_create_text_profile(

@@ -340,6 +340,18 @@ def _build_sidebar_config_updates(
         SEO_MATH_CONFIG,
         False,
     )
+    seo_math_config["show_scraped_text"] = _setting_value(
+        "seo_math_show_scraped_text",
+        "show_scraped_text",
+        SEO_MATH_CONFIG,
+        True,
+    )
+    seo_math_config["analyze_scraped_text"] = _setting_value(
+        "seo_math_analyze_scraped_text",
+        "analyze_scraped_text",
+        SEO_MATH_CONFIG,
+        False,
+    )
     seo_math_config["ngram_min"] = _setting_value(
         "seo_math_ngram_min", "ngram_min", SEO_MATH_CONFIG, 1
     )
@@ -481,6 +493,20 @@ def _build_sidebar_config_updates(
         scraper_config.get(
             "browser_enabled",
             SCRAPER_CONFIG.get("browser_enabled", False),
+        ),
+    )
+    scraper_config["content_browser_fallback_enabled"] = values.get(
+        "scraper_content_browser_fallback_enabled",
+        scraper_config.get(
+            "content_browser_fallback_enabled",
+            SCRAPER_CONFIG.get("content_browser_fallback_enabled", True),
+        ),
+    )
+    scraper_config["content_browser_fallback_headless"] = values.get(
+        "scraper_content_browser_fallback_headless",
+        scraper_config.get(
+            "content_browser_fallback_headless",
+            SCRAPER_CONFIG.get("content_browser_fallback_headless", True),
         ),
     )
 
@@ -1068,6 +1094,22 @@ def render_sidebar() -> Dict[str, Any]:
                 t("seo_math_analyze_generated_text"),
                 key="seo_math_analyze_generated_text_checkbox",
             )
+            _sync_sidebar_widget_from_config(
+                "seo_math_show_scraped_text_checkbox",
+                bool(_seo_math_value("show_scraped_text", True)),
+            )
+            seo_math_show_scraped_text = st.checkbox(
+                t("seo_math_show_scraped_text"),
+                key="seo_math_show_scraped_text_checkbox",
+            )
+            _sync_sidebar_widget_from_config(
+                "seo_math_analyze_scraped_text_checkbox",
+                bool(_seo_math_value("analyze_scraped_text", False)),
+            )
+            seo_math_analyze_scraped_text = st.checkbox(
+                t("seo_math_analyze_scraped_text"),
+                key="seo_math_analyze_scraped_text_checkbox",
+            )
 
             with st.expander(t("seo_math_advanced")):
                 _sync_sidebar_widget_from_config(
@@ -1196,7 +1238,7 @@ def render_sidebar() -> Dict[str, Any]:
                 default_bm25f_params = SEO_MATH_CONFIG.get("bm25f_params", {})
                 st.caption(t("seo_math_bm25f_params"))
                 seo_math_bm25f_k1 = st.number_input(
-                    "k1",
+                    t("seo_math_bm25f_k1"),
                     min_value=0.1,
                     max_value=5.0,
                     value=float(bm25f_params.get("k1", default_bm25f_params.get("k1", 1.2))),
@@ -1204,7 +1246,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_bm25f_k1_input",
                 )
                 seo_math_bm25f_b_body = st.number_input(
-                    "b_body",
+                    t("seo_math_bm25f_b_body"),
                     min_value=0.0,
                     max_value=1.0,
                     value=float(bm25f_params.get("b_body", default_bm25f_params.get("b_body", 0.75))),
@@ -1212,7 +1254,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_bm25f_b_body_input",
                 )
                 seo_math_bm25f_b_title = st.number_input(
-                    "b_title",
+                    t("seo_math_bm25f_b_title"),
                     min_value=0.0,
                     max_value=1.0,
                     value=float(bm25f_params.get("b_title", default_bm25f_params.get("b_title", 0.5))),
@@ -1220,7 +1262,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_bm25f_b_title_input",
                 )
                 seo_math_bm25f_b_snippet = st.number_input(
-                    "b_snippet",
+                    t("seo_math_bm25f_b_snippet"),
                     min_value=0.0,
                     max_value=1.0,
                     value=float(bm25f_params.get("b_snippet", default_bm25f_params.get("b_snippet", 0.6))),
@@ -1231,7 +1273,7 @@ def render_sidebar() -> Dict[str, Any]:
                 default_field_weights = SEO_MATH_CONFIG.get("field_weights", {})
                 st.caption(t("seo_math_field_weights"))
                 seo_math_weight_serp_title = st.number_input(
-                    "SERP title",
+                    t("seo_math_weight_serp_title"),
                     0.0,
                     10.0,
                     float(field_weights.get("serp_title", default_field_weights.get("serp_title", 3.0))),
@@ -1239,7 +1281,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_weight_serp_title_input",
                 )
                 seo_math_weight_page_title = st.number_input(
-                    "Page title",
+                    t("seo_math_weight_page_title"),
                     0.0,
                     10.0,
                     float(field_weights.get("page_title", default_field_weights.get("page_title", 3.0))),
@@ -1247,7 +1289,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_weight_page_title_input",
                 )
                 seo_math_weight_h1 = st.number_input(
-                    "H1",
+                    t("seo_math_weight_h1"),
                     0.0,
                     10.0,
                     float(field_weights.get("h1", default_field_weights.get("h1", 2.5))),
@@ -1255,7 +1297,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_weight_h1_input",
                 )
                 seo_math_weight_meta_description = st.number_input(
-                    "Meta description",
+                    t("seo_math_weight_meta_description"),
                     0.0,
                     10.0,
                     float(field_weights.get("meta_description", default_field_weights.get("meta_description", 1.5))),
@@ -1263,7 +1305,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_weight_meta_description_input",
                 )
                 seo_math_weight_serp_snippet = st.number_input(
-                    "SERP snippet",
+                    t("seo_math_weight_serp_snippet"),
                     0.0,
                     10.0,
                     float(field_weights.get("serp_snippet", default_field_weights.get("serp_snippet", 1.5))),
@@ -1271,7 +1313,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_weight_serp_snippet_input",
                 )
                 seo_math_weight_related_searches = st.number_input(
-                    "Related searches",
+                    t("seo_math_weight_related_searches"),
                     0.0,
                     10.0,
                     float(field_weights.get("related_searches", default_field_weights.get("related_searches", 1.2))),
@@ -1279,7 +1321,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_weight_related_searches_input",
                 )
                 seo_math_weight_people_also_ask = st.number_input(
-                    "People Also Ask",
+                    t("seo_math_weight_people_also_ask"),
                     0.0,
                     10.0,
                     float(field_weights.get("people_also_ask", default_field_weights.get("people_also_ask", 1.1))),
@@ -1287,7 +1329,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_weight_people_also_ask_input",
                 )
                 seo_math_weight_trends_related = st.number_input(
-                    "Trends related",
+                    t("seo_math_weight_trends_related"),
                     0.0,
                     10.0,
                     float(field_weights.get("trends_related", default_field_weights.get("trends_related", 1.2))),
@@ -1295,7 +1337,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_weight_trends_related_input",
                 )
                 seo_math_weight_body_text = st.number_input(
-                    "Body text",
+                    t("seo_math_weight_body_text"),
                     0.0,
                     10.0,
                     float(field_weights.get("body_text", default_field_weights.get("body_text", 1.0))),
@@ -1303,7 +1345,7 @@ def render_sidebar() -> Dict[str, Any]:
                     key="seo_math_weight_body_text_input",
                 )
                 seo_math_weight_anchor_text = st.number_input(
-                    "Anchor text",
+                    t("seo_math_weight_anchor_text"),
                     0.0,
                     10.0,
                     float(field_weights.get("anchor_text", default_field_weights.get("anchor_text", 1.4))),
@@ -1314,22 +1356,22 @@ def render_sidebar() -> Dict[str, Any]:
                 default_signal_config = SEO_MATH_CONFIG.get("signals", {})
                 st.caption(t("seo_math_signals"))
                 seo_math_signal_title_alignment = st.checkbox(
-                    "Title alignment",
+                    t("seo_math_signal_title_alignment"),
                     value=bool(signal_config.get("title_alignment", default_signal_config.get("title_alignment", True))),
                     key="seo_math_signal_title_alignment_checkbox",
                 )
                 seo_math_signal_content_effort = st.checkbox(
-                    "Content effort",
+                    t("seo_math_signal_content_effort"),
                     value=bool(signal_config.get("content_effort", default_signal_config.get("content_effort", True))),
                     key="seo_math_signal_content_effort_checkbox",
                 )
                 seo_math_signal_topical_overlap = st.checkbox(
-                    "Topical overlap",
+                    t("seo_math_signal_topical_overlap"),
                     value=bool(signal_config.get("topical_overlap", default_signal_config.get("topical_overlap", True))),
                     key="seo_math_signal_topical_overlap_checkbox",
                 )
                 seo_math_signal_simhash = st.checkbox(
-                    "SimHash",
+                    t("seo_math_signal_simhash"),
                     value=bool(signal_config.get("simhash", default_signal_config.get("simhash", True))),
                     key="seo_math_signal_simhash_checkbox",
                 )
@@ -1346,6 +1388,10 @@ def render_sidebar() -> Dict[str, Any]:
             )
             seo_math_analyze_generated_text = bool(
                 _seo_math_value("analyze_generated_text", False)
+            )
+            seo_math_show_scraped_text = bool(_seo_math_value("show_scraped_text", True))
+            seo_math_analyze_scraped_text = bool(
+                _seo_math_value("analyze_scraped_text", False)
             )
             seo_math_ngram_min = int(_seo_math_value("ngram_min", 1))
             seo_math_ngram_max = int(_seo_math_value("ngram_max", 3))
@@ -1691,6 +1737,30 @@ def render_sidebar() -> Dict[str, Any]:
                 )
             else:
                 st.success(t("scraper_dependencies_ready"))
+
+        # --- url_llm browser fallback ---
+        # When requests-based scraping fails (captcha / Cloudflare Turnstile / 403), retry the URL via
+        # cloakbrowser. Default ON; headless is the user's choice. Independent of scraper_browser_enabled
+        # (that master toggle gates the SERP/Trends provider; this is the url_llm content path).
+        scraper_content_fallback_enabled = st.checkbox(
+            t("scraper_content_browser_fallback_enabled"),
+            value=bool(current_scraper_config.get(
+                "content_browser_fallback_enabled",
+                SCRAPER_CONFIG.get("content_browser_fallback_enabled", True),
+            )),
+            help=t("scraper_content_browser_fallback_enabled_help"),
+            key="scraper_content_browser_fallback_enabled_checkbox",
+        )
+        scraper_content_fallback_headless = bool(current_scraper_config.get(
+            "content_browser_fallback_headless",
+            SCRAPER_CONFIG.get("content_browser_fallback_headless", True),
+        ))
+        if scraper_content_fallback_enabled:
+            scraper_content_fallback_headless = st.checkbox(
+                t("scraper_content_browser_fallback_headless"),
+                value=scraper_content_fallback_headless,
+                key="scraper_content_browser_fallback_headless_checkbox",
+            )
 
         st.divider()
 
@@ -2070,6 +2140,8 @@ def render_sidebar() -> Dict[str, Any]:
                             "seo_math_analyze_intent": seo_math_analyze_intent,
                             "seo_math_analyze_generation_quality": seo_math_analyze_generation_quality,
                             "seo_math_analyze_generated_text": seo_math_analyze_generated_text,
+                            "seo_math_show_scraped_text": seo_math_show_scraped_text,
+                            "seo_math_analyze_scraped_text": seo_math_analyze_scraped_text,
                             "seo_math_ngram_min": seo_math_ngram_min,
                             "seo_math_ngram_max": seo_math_ngram_max,
                             "seo_math_top_terms": seo_math_top_terms,
@@ -2111,6 +2183,8 @@ def render_sidebar() -> Dict[str, Any]:
                             "trends_max_delay": trends_max_delay,
                             "trends_state_file": trends_state_file,
                             "scraper_browser_enabled": scraper_browser_enabled,
+                            "scraper_content_browser_fallback_enabled": scraper_content_fallback_enabled,
+                            "scraper_content_browser_fallback_headless": scraper_content_fallback_headless,
                             "crawler_enabled": crawler_enabled,
                             "crawler_max_pages": crawler_max_pages,
                             "crawler_max_depth": crawler_max_depth,
@@ -2172,6 +2246,11 @@ def render_sidebar() -> Dict[str, Any]:
             "timeout_seconds": crawler_timeout_seconds,
             "max_response_bytes": crawler_max_response_bytes,
             "max_retries": crawler_max_retries,
+        },
+        "seo_math_settings": {
+            "enabled": seo_math_enabled,
+            "show_scraped_text": seo_math_show_scraped_text,
+            "analyze_scraped_text": seo_math_analyze_scraped_text,
         },
         "keyword_llm_generation_language": keyword_llm_generation_language,
         "page_type": page_type,

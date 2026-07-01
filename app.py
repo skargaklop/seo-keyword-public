@@ -28,6 +28,7 @@ from components.results import (
     render_keyword_results,
     render_keyword_selection,
     render_scraping_preview,
+    render_scraped_text_math_report,
     render_seo_generation,
     render_seo_results,
     render_serp_chain_to_ads,
@@ -1009,6 +1010,7 @@ def main() -> None:
     upload_max_rows: int = settings.get("upload_max_rows", 1000)
     crawler_settings: dict = settings.get("crawler_settings", {})
     trends_settings: dict = settings.get("google_trends_settings", {})
+    seo_math_settings: dict = settings.get("seo_math_settings", {})
     force_refresh: bool = bool(settings.get("cache_force_refresh", False))
     keyword_llm_language: str = settings.get("keyword_llm_generation_language", "Russian")
     page_type: str = settings.get("page_type", "product")
@@ -1318,8 +1320,14 @@ def main() -> None:
         WORKFLOW_MODE_KEYWORD_LLM,
         WORKFLOW_MODE_CRAWL_REPORT,
         WORKFLOW_MODE_TRENDS,
-    ):
+    ) and bool(seo_math_settings.get("show_scraped_text", True)):
         render_scraping_preview()
+
+    if workflow_mode in (
+        WORKFLOW_MODE_URL_LLM,
+        WORKFLOW_MODE_URL_SEED,
+    ):
+        render_scraped_text_math_report(config_override=seo_math_settings)
 
     if workflow_mode == WORKFLOW_MODE_URL_LLM:
         run_id = str(st.session_state.get("current_run_id", ""))
@@ -1468,7 +1476,7 @@ def main() -> None:
                 page_type=page_type,
             )
 
-    render_seo_results(auto_save_excel)
+    render_seo_results(auto_save_excel, show_scraped_text=bool(seo_math_settings.get("show_scraped_text", True)))
 
     # Keyword LLM regeneration handler — consumes force-regenerate flag for keyword_llm workflow
     # (URL workflows consume the flag inside render_seo_generation above)

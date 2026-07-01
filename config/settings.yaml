@@ -194,8 +194,43 @@ llm:
       \ limit\n- [ ] H1 is distinct from meta title, within length limit\n- [ ] Description\
       \ uses only allowed HTML tags, no markdown\n- [ ] All Tier 1 forbidden patterns\
       \ absent\n- [ ] Language-specific AI patterns absent\n- [ ] Output contains\
-      \ exactly 4 sections: META_TITLE, META_DESCRIPTION, H1, DESCRIPTION\n\nNow generate\
-      \ the output for the provided {language} and {keywords_list}."
+      \ exactly 4 sections: META_TITLE, META_DESCRIPTION, H1, DESCRIPTION\n\n\n\n\
+      ## TIER 4 - HUMANIZER: REMOVE AI-SLOP TELLS (final rewrite pass)\nAfter the\
+      \ text above is written, rewrite every DESCRIPTION section to remove machine-generated\
+      \ fingerprints WITHOUT changing the meaning, the target keywords, or the LSI\
+      \ terms. You are changing the voice, not the message.\n\nStructural tells to\
+      \ remove:\n- Em-dash overuse. Allow at most ONE em dash per ~300 words; replace\
+      \ the rest with a comma, a period, or parentheses.\n- The \"not X, but Y\" /\
+      \ \"It's not just X, it's Y\" / \"Whether you're X or Y\" contrastive formulas.\
+      \ Rewrite each as a plain, direct statement.\n- Tricolons (rule of three) in\
+      \ every paragraph. Vary list length: use two items, four items, or a single\
+      \ concrete item instead.\n\nLexical slop markers - REMOVE or replace with concrete,\
+      \ specific words. A clean draft contains NONE of these: delve, tapestry, intricate,\
+      \ robust, comprehensive, leverage, seamless, cutting-edge, game-changing, realm,\
+      \ journey, empower, unlock, navigate, myriad, pivotal, paramount, bustling,\
+      \ landscape (figurative), supercharge, a testament to.\n\nRhythm tells to fix:\n\
+      - Uniform sentence length. Mix short and long sentences; include at least one\
+      \ very short sentence (3-6 words) per section.\n- Repetitive paragraph openers\
+      \ (three in a row starting with \"The\", \"In\", or a gerund). Vary the opening\
+      \ word and structure.\n- Empty transitions (Moreover, Furthermore, Additionally\
+      \ stacked between sentences). Cut them; let the logic carry the link.\n\nHard\
+      \ constraints during humanizing:\n- KEEP every target keyword, grammatically\
+      \ integrated.\n- KEEP every LSI / semantic term: none may be dropped (they may\
+      \ move).\n- KEEP every fact, claim, and instruction. Change the voice, not the\
+      \ substance.\n- Do NOT invent new statistics, quotes, or claims.\n\n## SELF-CHECK\
+      \ (run on your own draft before returning it)\nBefore you return the output,\
+      \ confirm each item. If any fails, rewrite and check again:\n- [ ] The output\
+      \ contains exactly 4 sections: META_TITLE, META_DESCRIPTION, H1, DESCRIPTION.\n\
+      - [ ] All target keywords from {keywords_list} are present in the DESCRIPTION.\n\
+      - [ ] All LSI terms you were given are still present (none dropped).\n- [ ]\
+      \ No Tier 1 forbidden patterns and no language-specific AI patterns are present.\n\
+      - [ ] No lexical slop markers remain (delve, tapestry, robust, comprehensive,\
+      \ leverage, seamless, etc.).\n- [ ] No \"not X, but Y\" contrastive formula;\
+      \ no more than ONE em dash per ~300 words.\n- [ ] Sentence lengths vary; at\
+      \ least one very short sentence per section.\n- [ ] Meaning, facts, and instructions\
+      \ are unchanged from your draft.\n- [ ] META_TITLE, META_DESCRIPTION, and H1\
+      \ each stay within their length limits.\n\nNow generate the output for the provided\
+      \ {language} and {keywords_list}."
   custom_providers:
   - name: omniroute
     display_name: Omniroute
@@ -260,6 +295,8 @@ seo_math:
   analyze_intent: true
   analyze_generation_quality: true
   analyze_generated_text: true
+  show_scraped_text: true
+  analyze_scraped_text: true
   ngram_min: 1
   ngram_max: 4
   top_terms_limit: 50
@@ -343,3 +380,5 @@ scraper:
   retry_on_failure: 3
   use_as_primary_trends: false
   use_as_primary_serp: false
+  content_browser_fallback_enabled: true
+  content_browser_fallback_headless: true

@@ -1,44 +1,31 @@
 # MODULE_CONTRACT: utils/url_matcher
-# Purpose: Pure URL/domain matching helper with comprehensive TLD support for SERP highlight classification
-# Rationale: Keeps URL matching logic dependency-free and testable, separate from pipeline and UI concerns
-# Dependencies: urllib.parse, re (stdlib only, no pip packages)
+# Purpose: Pure URL/domain matching helper with registrable-domain extraction for SERP highlight classification
+# Rationale: Keeps URL matching logic testable, separate from pipeline and UI concerns
+# Dependencies: urllib.parse, re (stdlib); tldextract (via utils.domain) for Public Suffix List resolution
 # Exports: normalize_match_url, extract_match_domain, classify_url_match, build_source_url_targets
-# LINKS: PLAN 09-04 Task 1, development-plan.xml#MOD-009
+# LINKS: PLAN 09-04 Task 1, development-plan.xml#MOD-009, utils/domain.py#registrable_domain
 # MODULE_MAP: utils/url_matcher.py
 # Public Functions: normalize_match_url, extract_match_domain, classify_url_match, build_source_url_targets
-# Private Helpers: _parse_hostname, _is_ip_address, _strip_www, _get_two_level_tld_domain
+# Private Helpers: _parse_hostname, _is_ip_address, _strip_www
 # Key Semantic Blocks: block_url_normalize_input, block_url_extract_domain, block_url_classify_match, block_url_build_target
 # Critical Flows: source URLs -> normalize -> build targets -> classify SERP results -> match type
 # Verification: python -m pytest tests/test_url_matcher.py -q
-# CHANGE_SUMMARY: Phase 9 Plan 4 Task 1: created pure URL matching module with comprehensive UA/RU/UK TLD heuristics
+# CHANGE_SUMMARY: extract_match_domain now delegates registrable-domain resolution to utils.domain (PSL-backed),
+#   replacing the hardcoded TWO_LEVEL_TLDS heuristic that collapsed *.kiev.ua sites into the "kiev.ua" zone.
 
-"""Pure URL/domain match helper with comprehensive TLD support.
+"""Pure URL/domain match helper with registrable-domain extraction.
 
 Provides normalization, domain extraction, and match classification
-for SERP URL highlighting. No external dependencies.
+for SERP URL highlighting. Registrable-domain resolution delegates to
+``utils.domain`` (Public Suffix List via tldextract).
 """
 
 import re
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
+from utils.domain import registrable_domain
 
-# ---------------------------------------------------------------------------
-# Two-level TLD registry (ccTLD with second-level registration)
-# ---------------------------------------------------------------------------
-TWO_LEVEL_TLDS: frozenset[str] = frozenset({
-    # Ukraine
-    "com.ua", "org.ua", "net.ua", "in.ua", "edu.ua", "gov.ua",
-    # Russia
-    "com.ru", "org.ru", "net.ru", "pp.ru",
-    # UK
-    "co.uk", "org.uk", "me.uk", "ac.uk", "gov.uk",
-    # Generic international
-    "co.jp", "com.au", "net.au", "org.au",
-    "co.nz", "org.nz", "co.in", "co.za",
-    "com.br", "com.mx", "com.ar", "com.tr",
-    "com.sg", "com.hk", "com.tw", "com.my",
-})
 
 # Regex for IPv4 address (covers dotted-decimal)
 _IPV4_RE = re.compile(
@@ -107,31 +94,6 @@ def _strip_www(hostname: str) -> str:
     return hostname
 
 
-# Purpose: If the hostname ends with a known two-level TLD, extract the domain
-# as the part before the two-level TLD plus the TLD itself.
-# For 'rozetka.com.ua' -> 'rozetka.com.ua'
-# For 'shop.amazon.co.uk' -> 'amazon.co.uk'
-# Returns None if no two-level TLD match.
-def _get_two_level_tld_domain(hostname: str) -> Optional[str]:
-    if not hostname or "." not in hostname:
-        return None
-
-    parts = hostname.split(".")
-    # Check last two parts against known two-level TLDs
-    if len(parts) >= 3:
-        candidate_tld = ".".join(parts[-2:])
-        if candidate_tld in TWO_LEVEL_TLDS:
-            # Domain is: second-level-name.two-level-tld
-            return ".".join(parts[-3:])
-
-    # Also check if hostname is exactly name.two-level-tld (e.g., "rozetka.com.ua")
-    if len(parts) == 2:
-        # This is just "name.tld", not a two-level TLD case
-        return None
-
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -166,38 +128,34 @@ def normalize_match_url(value: str) -> str:
 
 
 # FUNCTION_CONTRACT: extract_match_domain
-# Purpose: Extract the registrable domain from a URL with two-level TLD heuristics
+# Purpose: Extract the registrable domain (eTLD+1) from a URL or host string
 # Input: value (str) - URL or domain string
-# Output: str - registrable domain (e.g., 'rozetka.com.ua', 'example.com')
-# Side Effects: (none - pure function)
-# Business Rules: Handles two-level TLDs, punycode, IP address rejection
-# Failure Modes: Returns original input if hostname invalid or IP address
-# LINKS: PLAN 09-04 Task 1
+# Output: str - registrable domain (e.g., 'rozetka.com.ua', 'mobile.kiev.ua', 'example.com'),
+#   the input for IP addresses, the bare host for single-label hosts, or '' for empty input
+# Side Effects: (none externally; delegates to utils.domain's cached offline PSL lookup)
+# Business Rules: Delegates to utils.domain.registrable_domain (Public Suffix List via tldextract)
+#   for all multi-label suffix resolution, including multi-label zones like kiev.ua. Preserves the
+#   documented IP-passthrough and single-label-host-passthrough contracts of the prior heuristic.
+# Failure Modes: Returns the original input for IP addresses; '' for empty input; never raises
+# LINKS: PLAN 09-04 Task 1, utils/domain.py#registrable_domain
 def extract_match_domain(value: str) -> str:
+    if not value or not str(value).strip():
+        return ""
     hostname = _parse_hostname(value)
     if not hostname:
-        return value.strip() if value else ""
+        return value.strip()
 
-    # Reject IP addresses
+    # Reject IP addresses — pass the original input through (documented contract).
     if _is_ip_address(hostname):
         return value.strip()
 
-    hostname = _strip_www(hostname)
+    # Delegate multi-label / public-suffix resolution to the PSL-backed helper.
+    registered = registrable_domain(hostname)
+    if registered:
+        return registered
 
-    if "." not in hostname:
-        return hostname
-
-    # Check for two-level TLD match first
-    two_level = _get_two_level_tld_domain(hostname)
-    if two_level:
-        return two_level
-
-    # Standard TLD: take last two parts
-    parts = hostname.split(".")
-    if len(parts) >= 2:
-        return ".".join(parts[-2:])
-
-    return hostname
+    # Single-label host (e.g. 'localhost') or an unresolvable value: return the bare host.
+    return _strip_www(hostname)
 
 
 # FUNCTION_CONTRACT: classify_url_match

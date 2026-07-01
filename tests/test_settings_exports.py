@@ -10,9 +10,30 @@
 # Key Semantic Blocks: none.
 # Critical Flows: import config.settings -> assert derived constants mirror settings.yaml sections.
 # Verification: verification-plan.xml#V-MOD-201
-# CHANGE_SUMMARY: Added GRACE module contract linking this test file to MOD-001.
+# CHANGE_SUMMARY: Added GRACE module contract linking this test file to MOD-001; Task 1 added humanizer + self-check stage tests (test_seo_description_prompt_has_humanizer_final_stage, test_seo_description_prompt_has_self_check_stage).
+
+from pathlib import Path
 
 import config.settings as settings
+
+
+def _clear_serp_env(monkeypatch) -> None:
+    for env_var in (
+        "SERPER_API_KEY",
+        "SERPAPI_KEY",
+        "BRAVE_SEARCH_API_KEY",
+        "SEARCHAPI_IO_KEY",
+        "ZENSERP_KEY",
+        "SCRAPERAPI_KEY",
+        "DATAFORSEO_LOGIN",
+        "DATAFORSEO_PASSWORD",
+        "SERPSTAT_TOKEN",
+        "SEMRUSH_API_KEY",
+        "SERPSTACK_KEY",
+        "SCALESERP_KEY",
+        "VALUESERP_KEY",
+    ):
+        monkeypatch.delenv(env_var, raising=False)
 
 
 # Purpose: Test settings exports history and uploads configs
@@ -67,6 +88,41 @@ def test_google_trends_config_defaults_when_keys_missing() -> None:
     else:
         # Empty dict is valid default when section is missing
         assert trends_cfg == {}
+
+
+# Purpose: Test serp provider options expose semrush label
+def test_serp_provider_options_include_semrush() -> None:
+    assert settings.SERP_PROVIDER_OPTIONS["Semrush"] == "semrush"
+
+
+# Purpose: Test available serp providers exposes semrush only with key
+def test_get_available_serp_providers_exposes_semrush_only_with_key(monkeypatch) -> None:
+    _clear_serp_env(monkeypatch)
+
+    assert "Semrush" not in settings.get_available_serp_providers()
+
+    monkeypatch.setenv("SEMRUSH_API_KEY", "semrush-key")
+
+    assert settings.get_available_serp_providers()["Semrush"] == "semrush"
+
+
+# Purpose: Test semrush trends provider is not wired into google trends surfaces
+def test_no_semrush_trends_provider_order_surface() -> None:
+    paths = [
+        "utils/google_trends_client.py",
+        "config/settings.yaml",
+        "components/sidebar.py",
+    ]
+    combined = "\n".join(Path(path).read_text(encoding="utf-8") for path in paths)
+    lowered = combined.lower()
+
+    assert "semrush_trends" not in lowered
+    assert "semrush" not in [
+        token.strip(" '\"\t\r\n,[]{}():")
+        for line in lowered.splitlines()
+        if "provider_order" in line or "google_trends" in line
+        for token in line.split()
+    ]
 
 
 # Purpose: Test that scraper config returns empty dict when keys are absent.
@@ -143,5 +199,35 @@ def test_cache_relevant_subset_structure() -> None:
         if cache_relevant:
             # Not all need to be present, but structure should be valid
             assert all(isinstance(key, str) for key in cache_relevant)
+
+
+# --- Task 1: Humanizer final stage + self-check appended to SEO rewrite prompt ---
+
+# Purpose: Verify the seo_description prompt has a humanizer final stage that
+# instructs the model to remove AI-slop tells while keeping sense, keywords, LSI.
+def test_seo_description_prompt_has_humanizer_final_stage() -> None:
+    prompt = settings.SEO_DESCRIPTION_PROMPT
+    # A clearly labeled humanizer section must exist
+    assert "HUMANIZER" in prompt.upper(), "humanizer final stage missing"
+    # The core AI-slop lexical tells must be enumerated (case-insensitive)
+    for marker in ("em dash", "delve", "tapestry", "robust"):
+        assert marker.lower() in prompt.lower(), f"humanizer marker missing: {marker}"
+    # Must explicitly preserve the SEO substance
+    assert "keyword" in prompt.lower(), "humanizer must mention keeping keywords"
+    assert "lsi" in prompt.lower(), "humanizer must mention keeping LSI"
+
+
+# Purpose: Verify the seo_description prompt ends with a concise self-check stage
+# stating what the output must contain.
+def test_seo_description_prompt_has_self_check_stage() -> None:
+    prompt = settings.SEO_DESCRIPTION_PROMPT
+    assert "SELF-CHECK" in prompt.upper(), "self-check stage missing"
+    # The self-check must be near the end (final 1500 chars)
+    tail = prompt[-1500:]
+    assert "SELF-CHECK" in tail.upper(), "self-check must be the final stage"
+    # Must require the core output artifacts
+    for must_have in ("META_TITLE", "META_DESCRIPTION", "H1"):
+        assert must_have in tail, f"self-check must require: {must_have}"
+
 
 # GRACE module link: MOD-006
