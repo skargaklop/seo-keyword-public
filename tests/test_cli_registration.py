@@ -147,11 +147,13 @@ def test_register_allows_resulting_long_path_when_registry_setter_is_used(tmp_pa
     assert calls[-1].endswith(str(shim_dir))
 
 
-def test_entry_on_path_handles_expandable_vars_without_resolve(tmp_path: Path) -> None:
-    from cli.registration import _entry_on_path
+def test_entry_on_path_handles_expandable_vars_without_resolve(monkeypatch) -> None:
+    import cli.registration as registration
 
     path_value = r"%USERPROFILE%\.seos-cli\bin;C:\Tools"
-    assert _entry_on_path(r"%USERPROFILE%\.seos-cli\bin", path_value) is True
+    monkeypatch.setattr(registration.os, "pathsep", ":")
+
+    assert registration._entry_on_path(r"%USERPROFILE%\.seos-cli\bin", path_value) is True
 
 
 # ---------------------------------------------------------------------------

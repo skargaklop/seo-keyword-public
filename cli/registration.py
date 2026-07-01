@@ -13,13 +13,13 @@
 #     an in-memory setter and never touch real PATH state.
 #   - unregister() reverses both: removes the shim file and the PATH entry.
 #   - NEVER calls setx. Setter failures return non-zero without corrupting PATH.
-# Dependencies: stdlib only (os/pathlib/sys/subprocess/winreg). NEVER streamlit/utils.pipeline/config.i18n.
+# Dependencies: stdlib only (os/pathlib/sys/winreg). NEVER streamlit/utils.pipeline/config.i18n.
 # Exports: register, unregister, status.
 # LINKS: knowledge-graph.xml#MOD-032, verification-plan.xml#V-18-REGISTRATION, docs/cli-plan.md §6
 # MODULE_MAP: cli/registration.py
 # Public Functions: register, unregister, status.
 # Private Helpers: _windows_set_user_path, _posix_set_user_path, _current_user_path, _path_entries,
-#   _join_path, _write_windows_shim, _write_posix_shim, _shim_name.
+#   _join_path, _looks_like_windows_path_list, _write_windows_shim, _write_posix_shim, _shim_name.
 # Key Semantic Blocks: none.
 # Critical Flows: register -> shim file + PATH entry (idempotent) -> unregister reverses both.
 # Verification: verification-plan.xml#V-18-REGISTRATION
@@ -51,7 +51,13 @@ IsWindows = sys.platform.startswith("win")
 def _path_entries(path_value: str) -> List[str]:
     if not path_value:
         return []
-    return [p for p in path_value.split(os.pathsep) if p]
+    separator = ";" if _looks_like_windows_path_list(path_value) else os.pathsep
+    return [p for p in path_value.split(separator) if p]
+
+
+# Detect registry-style Windows PATH values when the test host is not Windows.
+def _looks_like_windows_path_list(path_value: str) -> bool:
+    return ";" in path_value and ("\\" in path_value or "%" in path_value)
 
 
 def _join_path(entries: List[str]) -> str:
