@@ -1,0 +1,91 @@
+{
+  "site_type": "Медицинский информационный сайт",
+  "site_type_reason": "Основная выборка состоит из информационной статьи, trust pages и YMYL-контента.",
+  "ymyl_tier": "Clear YMYL",
+  "sampled_urls": [
+    {
+      "url": "https://example-health.test/",
+      "page_role_hint": "generic"
+    },
+    {
+      "url": "https://example-health.test/articles/colonoscopy-prep",
+      "page_role_hint": "informational"
+    }
+  ],
+  "hard_gate_findings": [
+    {
+      "signal": "untrustworthy_ymyl_claims",
+      "page_url": "https://example-health.test/offers/instant-cure",
+      "observed_evidence": "Обнаружены обещания результата без медицинского обоснования.",
+      "rating_impact": "Понижает trust и может тянуть Page Quality вниз."
+    }
+  ],
+  "metrics": {
+    "purpose_clarity": "Yes",
+    "beneficial_purpose": "Yes",
+    "potential_harm": "Unclear",
+    "deceptive_purpose_design": "No",
+    "ymyl_tier": "Clear YMYL",
+    "need_for_formal_expertise": "Yes",
+    "need_for_first_hand_experience": "Yes",
+    "main_content_quality": "High",
+    "main_content_effort_originality": "High",
+    "main_content_accuracy_trustworthiness": "High",
+    "supporting_content_helpfulness": "High",
+    "ads_monetization_interference": "Medium",
+    "title_helpfulness_exaggeration_risk": "High",
+    "website_information_sufficiency": "High",
+    "content_creator_information_sufficiency": "High",
+    "customer_service_transaction_trust_signals": "Medium",
+    "website_reputation": "Unclear",
+    "content_creator_reputation": "Medium",
+    "experience": "4",
+    "expertise": "4",
+    "authoritativeness": "3",
+    "trustworthiness": "4",
+    "overall_eeat": "78",
+    "page_quality": "High",
+    "needs_met": "N/A",
+    "special_flags": "N/A"
+  },
+  "page_quality_summary": {
+    "page_quality": "High",
+    "reasons": [
+      "Структура страницы помогает быстро понять ответ.",
+      "Есть strong authorship signals и источники.",
+      "External reputation требует отдельной проверки."
+    ]
+  },
+  "eeat_explanations": {
+    "experience": "Есть firsthand narrative и конкретные детали подготовки.",
+    "expertise": "Виден medical review и корректная терминология.",
+    "authoritativeness": "Нишевой авторитет просматривается, но внешняя репутация подтверждена не полностью.",
+    "trustworthiness": "Есть trust pages, автор, review-процесс и источники.",
+    "overall_eeat": "Профиль сильный, но остается внешний reputation gap."
+  },
+  "evidence_matrix": [
+    {
+      "signal": "Person schema",
+      "page_url": "https://example-health.test/articles/colonoscopy-prep",
+      "observed_evidence": "Указан автор и reviewer в schema и в тексте страницы.",
+      "rating_impact": "Повышает Expertise и Trustworthiness."
+    },
+    {
+      "signal": "Citations",
+      "page_url": "https://example-health.test/articles/colonoscopy-prep",
+      "observed_evidence": "Есть ссылки на guidelines и journal source.",
+      "rating_impact": "Поддерживает accuracy/trust."
+    }
+  ],
+  "priority_actions": {
+    "critical": [
+      "Убрать или переписать страницы с неподтвержденными медицинскими обещаниями."
+    ],
+    "high": [
+      "Добавить отдельную страницу с редакционным процессом и medical review policy."
+    ],
+    "medium": [
+      "Усилить блок внешней репутации сайта и профилей авторов."
+    ]
+  }
+}

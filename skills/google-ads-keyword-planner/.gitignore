@@ -1,0 +1,12 @@
+# Secrets
+config/.env
+
+# Runtime cache
+cache/google_ads_token.json
+cache/results/*.json
+cache/ops/*.json
+!cache/results/.gitkeep
+!cache/ops/.gitkeep
+
+# macOS
+.DS_Store

@@ -1,0 +1,14 @@
+# google-ads Python SDK configuration (alternative to .env).
+# Copy to google-ads.yaml and fill values.
+# Reference: https://developers.google.com/google-ads/api/docs/client-libs/python/configuration
+
+developer_token: "your_developer_token"
+client_id: "your_oauth_client_id"
+client_secret: "your_oauth_client_secret"
+refresh_token: "your_oauth_refresh_token"
+
+# Customer ID without dashes
+login_customer_id: ""          # MCC ID, if applicable
+# client_customer_id: "1234567890"
+
+# use_proto_plus: true

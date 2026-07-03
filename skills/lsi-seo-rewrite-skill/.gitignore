@@ -1,0 +1,17 @@
+# Local junk files
+nul
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Temporary/editor artifacts
+*.tmp
+*.bak
+*.swp
+~$*
+
+# Local draft retained outside the deployable skill package
+archive/_prototype_SKILL.md
+
+# Accidental nested repository metadata retained locally
+.git-nested-backup/
