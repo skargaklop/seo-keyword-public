@@ -1,22 +1,6 @@
 # Auto SEO Keyword Planner
 
-<!--
-MODULE_CONTRACT: README
-Purpose: Document Auto SEO Keyword Planner workflows, configuration, dependencies, and GRACE phase behavior.
-Rationale: Provides the documentation implementation surface for the MOD-DOC graph module.
-Dependencies: docs/development-plan.xml, docs/knowledge-graph.xml, docs/verification-plan.xml.
-Exports: user-facing project documentation.
-LINKS: knowledge-graph.xml#MOD-DOC
-MODULE_MAP: README.md
-Public Functions: documentation sections.
-Private Helpers: none.
-Key Semantic Blocks: none.
-Critical Flows: describe workflows -> document configuration -> record browser/Trends/cache/SEO math caveats.
-Verification: verification-plan.xml#V-09-DOCS, verification-plan.xml#V-12-DOCS-GRACE
-CHANGE_SUMMARY: Added GRACE documentation module contract linking README to MOD-DOC. Refreshed browser-scraping/Trends-provider framing — browser scraping is the default provider for Google Trends and SERP, enabled by default.
--->
-
-> **Русская версия.** [English version](README.md)
+**Русская версия.** [English version](README.md)
 
 Streamlit-приложение для сбора семантики, получения идей ключевых слов из Google Ads и генерации SEO-текстов по URL или keyword seed.
 
@@ -668,3 +652,4 @@ python -m pytest tests -q
 
 - Инструкция по настройке Google Ads API: [GOOGLE_ADS_SETUP.md](GOOGLE_ADS_SETUP.md)
 - Пример переменных окружения: [`.env.example`](.env.example)
+- Данное программное обеспечение распространяется по лицензии AGPLv3. Если вы намерены использовать этот код в коммерческом продукте с закрытым исходным кодом или в проприетарном бэкенде, вам необходимо приобрести коммерческую лицензию. По вопросам стоимости обращайтесь ко мне по адресу skargaklop@gmail.com.

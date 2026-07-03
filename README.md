@@ -1,22 +1,6 @@
 # Auto SEO Keyword Planner
 
-<!--
-MODULE_CONTRACT: README
-Purpose: Document Auto SEO Keyword Planner workflows, configuration, dependencies, and GRACE phase behavior.
-Rationale: Provides the documentation implementation surface for the MOD-DOC graph module.
-Dependencies: docs/development-plan.xml, docs/knowledge-graph.xml, docs/verification-plan.xml.
-Exports: user-facing project documentation.
-LINKS: knowledge-graph.xml#MOD-DOC
-MODULE_MAP: README.md
-Public Functions: documentation sections.
-Private Helpers: none.
-Key Semantic Blocks: none.
-Critical Flows: describe workflows -> document configuration -> record browser/Trends/cache/SEO math caveats.
-Verification: verification-plan.xml#V-09-DOCS, verification-plan.xml#V-12-DOCS-GRACE
-CHANGE_SUMMARY: Added English translation of the README; Russian original preserved as README_RU.md. Refreshed browser-scraping/Trends-provider framing — browser scraping is the default provider for Google Trends and SERP, enabled by default.
--->
-
-> **English version.** [Русская версия](README_RU.md)
+**English version.** [Русская версия](README_RU.md)
 
 A Streamlit application for collecting search semantics, pulling keyword ideas from Google Ads, and generating SEO-optimized texts from a URL or a keyword seed.
 
@@ -714,3 +698,4 @@ checkpoint/resume, setx-free registration).
 
 - Google Ads API setup guide: [GOOGLE_ADS_SETUP.md](GOOGLE_ADS_SETUP.md)
 - Example environment variables: [`.env.example`](.env.example)
+- This software is licensed under AGPLv3. If you intend to use this code in a closed-source commercial product or proprietary backend, you must purchase a commercial license. Contact me at skargaklop@gmail.com for pricing.

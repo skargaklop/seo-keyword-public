@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+*.py.tmp*
 
 venv/
 .venv/
@@ -28,6 +29,8 @@ logs/
 outputs/
 uploads/
 data/
+settings.yaml.tmp*
+*trends_state.json*
 *.log
 
 .idea/
@@ -42,3 +45,6 @@ pip-wheel-metadata/
 
 GITHUB_PUBLISH_GUIDE.md
 Design_Documentation.rtf
+
+# Stray Windows cache dir (unexpanded %SystemDrive% env var)
+%SystemDrive%/
