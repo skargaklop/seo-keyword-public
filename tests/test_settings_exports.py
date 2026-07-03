@@ -10,7 +10,7 @@
 # Key Semantic Blocks: none.
 # Critical Flows: import config.settings -> assert derived constants mirror settings.yaml sections.
 # Verification: verification-plan.xml#V-MOD-201
-# CHANGE_SUMMARY: Added GRACE module contract linking this test file to MOD-001; Task 1 added humanizer + self-check stage tests (test_seo_description_prompt_has_humanizer_final_stage, test_seo_description_prompt_has_self_check_stage).
+# CHANGE_SUMMARY: Added GRACE module contract linking this test file to MOD-001; Task 1 added humanizer + self-check stage tests (test_seo_description_prompt_has_humanizer_final_stage, test_seo_description_prompt_has_self_check_stage). PHASE-20 Task 3 added tracked-websites/search-queries/track-serp-math-statistics config-defaults + round-trip tests.
 
 from pathlib import Path
 
@@ -59,6 +59,52 @@ def test_settings_exports_google_trends_config() -> None:
 def test_settings_exports_scraper_config() -> None:
     assert hasattr(settings, "SCRAPER_CONFIG")
     assert settings.SCRAPER_CONFIG == settings.config.get("scraper", {})
+
+
+# --- Task 2: Analytics config export ---
+
+# Purpose: Test that ANALYTICS_CONFIG is exported from settings.
+def test_settings_exports_analytics_config() -> None:
+    assert hasattr(settings, "ANALYTICS_CONFIG")
+    assert settings.ANALYTICS_CONFIG == settings.config.get("analytics", {})
+
+
+# Purpose: Test that the analytics block loads from settings.yaml with expected defaults.
+def test_analytics_config_has_expected_defaults() -> None:
+    cfg = settings.load_config()
+    a = cfg["analytics"]
+    assert a["enabled"] is True
+    assert a["retention_days"] == 90
+    assert a["max_events"] == 5000
+    assert a["capture_tokens"] is True
+    assert a["capture_repeated_terms"] is True
+    assert a["display_top_n"] == 20
+    assert a["max_dimension_items_per_event"] == 250
+    assert a["tracked_list_limit"] == 100
+
+
+# --- PHASE-20 Task 3: tracked SERP/math statistics config ---
+
+# Purpose: SEO_MATH_CONFIG exposes tracked_websites/tracked_search_queries defaults.
+def test_seo_math_config_has_tracked_defaults() -> None:
+    seo_math_cfg = settings.SEO_MATH_CONFIG
+    assert seo_math_cfg.get("tracked_websites") == []
+    assert seo_math_cfg.get("tracked_search_queries") == []
+
+
+# Purpose: track_serp_math_statistics defaults to True (master toggle ON).
+def test_seo_math_config_track_serp_math_statistics_default_true() -> None:
+    seo_math_cfg = settings.SEO_MATH_CONFIG
+    assert seo_math_cfg.get("track_serp_math_statistics") is True
+
+
+# Purpose: load_config() round-trips the three tracked keys from settings.yaml.
+def test_load_config_seo_math_has_tracked_keys() -> None:
+    cfg = settings.load_config()
+    seo_math = cfg["seo_math"]
+    assert "tracked_websites" in seo_math
+    assert "tracked_search_queries" in seo_math
+    assert "track_serp_math_statistics" in seo_math
 
 
 # Purpose: Test that cache config returns empty dict when keys are absent.

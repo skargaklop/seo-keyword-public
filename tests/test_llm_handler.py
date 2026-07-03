@@ -110,15 +110,15 @@ class TestRuntimeLLMConfig:
         )
         captured: dict[str, float] = {}
 
-        # Purpose: fake call google implementation
+        # Purpose: fake call google implementation (post-refactor returns (content, usage) tuple)
         def fake_call_google(
             model: str,
             prompt: str,
             system_prompt: str,
             request_timeout: float,
-        ) -> str:
+        ) -> tuple:
             captured["timeout"] = request_timeout
-            return "alpha, beta"
+            return "alpha, beta", None
 
         monkeypatch.setattr(handler, "_call_google", fake_call_google)
 
@@ -145,15 +145,15 @@ class TestRuntimeLLMConfig:
         )
         captured: dict[str, float] = {}
 
-        # Purpose: fake call google implementation
+        # Purpose: fake call google implementation (post-refactor returns (content, usage) tuple)
         def fake_call_google(
             model: str,
             prompt: str,
             system_prompt: str,
             request_timeout: float,
-        ) -> str:
+        ) -> tuple:
             captured["timeout"] = request_timeout
-            return "generated seo text"
+            return "generated seo text", None
 
         monkeypatch.setattr(handler, "_call_google", fake_call_google)
 
@@ -238,7 +238,7 @@ class TestRuntimeLLMConfig:
             request_timeout=9.0,
         )
 
-        assert result == "keyword1, keyword2"
+        assert result == ("keyword1, keyword2", None)
         assert captured_client_args["base_url"] == "https://api.z.ai/api/coding/paas/v4"
         assert slept == [3]
 
@@ -289,7 +289,7 @@ class TestRuntimeLLMConfig:
             request_timeout=9.0,
         )
 
-        assert result == "keyword1, keyword2"
+        assert result == ("keyword1, keyword2", None)
         assert captured_client_args["base_url"] == "https://proxy.example/v1"
 
     # Purpose: Test anthropic uses explicit base url
@@ -338,7 +338,7 @@ class TestRuntimeLLMConfig:
             request_timeout=9.0,
         )
 
-        assert result == "keyword1, keyword2"
+        assert result == ("keyword1, keyword2", None)
         assert captured_client_args["base_url"] == "https://anthropic-proxy.example"
 
     # Purpose: Test google uses explicit base url
@@ -401,7 +401,7 @@ class TestRuntimeLLMConfig:
             request_timeout=9.0,
         )
 
-        assert result == "keyword1, keyword2"
+        assert result == ("keyword1, keyword2", None)
         http_options = captured_client_args["http_options"]
         assert http_options.base_url == "https://gemini-proxy.example"
         assert http_options.timeout == 10000
@@ -468,7 +468,7 @@ class TestRuntimeLLMConfig:
             request_timeout=1.0,
         )
 
-        assert result == "keyword1, keyword2"
+        assert result == ("keyword1, keyword2", None)
         http_options = captured_client_args["http_options"]
         assert http_options.timeout == 10000
 

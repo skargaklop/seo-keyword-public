@@ -305,6 +305,9 @@ seo_math:
   use_related_searches: true
   use_people_also_ask: true
   strip_suffixes: false
+  tracked_websites: []
+  tracked_search_queries: []
+  track_serp_math_statistics: true
   analyze_bm25f: true
   bm25f_params:
     k1: 1.2
@@ -382,3 +385,15 @@ scraper:
   use_as_primary_serp: false
   content_browser_fallback_enabled: true
   content_browser_fallback_headless: true
+
+analytics:
+  enabled: true
+  retention_days: 90
+  max_events: 5000
+  capture_tokens: true
+  capture_repeated_terms: true
+  hide_fixture_events: true
+  display_top_n: 20
+  max_dimension_items_per_event: 250
+  tracked_list_limit: 100
+  capture_result_titles: false

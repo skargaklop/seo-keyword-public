@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from bs4 import BeautifulSoup
 from config.settings import (
@@ -33,6 +33,7 @@ from tenacity import (
     wait_fixed,
 )
 
+from utils.analytics import record_workflow_event
 from utils.logger import logger
 from utils.model_fetcher import PROVIDER_BASE_URLS
 from utils.rate_limiter import get_rate_limiter
@@ -60,15 +61,15 @@ except ImportError:
 # Purpose: Multi-provider LLM abstraction supporting OpenAI, Anthropic, Google Gemini, XAI, Groq, and other OpenAI-compatible APIs
 # Rationale: Centralizes keyword extraction and SEO text generation with retry logic, rate limiting, and provider fallback
 # Dependencies: openai SDK, anthropic SDK, google.genai SDK, tenacity, config.settings (incl. CUSTOM_PROVIDERS), utils.rate_limiter, utils.logger, utils.model_fetcher.PROVIDER_BASE_URLS
-# Exports: LLMHandler (class with generate_keywords, generate_seo_text), LLMGenerationError, LLMNonRetriableCredentialError, is_non_retriable_credential_error
+# Exports: LLMHandler (class with generate_keywords, generate_seo_text), LLMGenerationError, LLMNonRetriableCredentialError, is_non_retriable_credential_error, _extract_usage_tokens
 # LINKS: requirements.xml#UC-001, requirements.xml#UC-004, technology.xml#SVC-001, development-plan.xml#MOD-004
 # MODULE_MAP: llm_handler
 # Public Functions: LLMHandler.generate_keywords(), LLMHandler.generate_seo_text()
-# Private Helpers: _call_openai_compatible(), _call_anthropic(), _call_google(), _execute_generation(), _execute_generation_once(), _build_retrying(), _get_system_prompt(), _get_seo_prompt(), _clean_llm_response(), _sleep_between_requests(), _run_prefix(), _extract_error_status_and_body(), _raise_if_non_retriable_credential_error(), _cache_generation_result(), _execute_fallback_and_cache()
-# Key Semantic Blocks: block_llm_keyword_extraction, block_llm_seo_generation, block_llm_provider_routing, block_llm_error_classify_retry
-# Critical Flows: Provider routing -> API call with rate limiting -> retry on failure -> fallback provider on persistent failure
+# Private Helpers: _call_openai_compatible(), _call_anthropic(), _call_google(), _execute_generation(), _execute_generation_once(), _build_retrying(), _get_system_prompt(), _get_seo_prompt(), _clean_llm_response(), _sleep_between_requests(), _run_prefix(), _extract_error_status_and_body(), _raise_if_non_retriable_credential_error(), _cache_generation_result(), _execute_fallback_and_cache(), _extract_usage_tokens(), _get_usage_obj(), _maybe_getattr(), _coerce_token_field(), _record_llm_call_event()
+# Key Semantic Blocks: block_llm_keyword_extraction, block_llm_seo_generation, block_llm_provider_routing, block_llm_error_classify_retry, block_token_extraction, block_token_capture
+# Critical Flows: Provider routing -> API call with rate limiting -> retry on failure -> fallback provider on persistent failure; _call_* returns (content, usage) -> _execute_generation_once records gated llm_call analytics event
 # Verification: verification-plan.xml#V-MOD-004
-# CHANGE_SUMMARY: Replaced shallow GRACE markers with complete module-level contracts; Phase 8 Plan 03: classified non-retriable credential-routing errors to skip repeated retries and use secret-safe fallback logging; Phase 9 review fix: SEO prompt generation can include sanitized scraped content while preserving keyword volume hints.
+# CHANGE_SUMMARY: Replaced shallow GRACE markers with complete module-level contracts; Phase 8 Plan 03: classified non-retriable credential-routing errors to skip repeated retries and use secret-safe fallback logging; Phase 9 review fix: SEO prompt generation can include sanitized scraped content while preserving keyword volume hints. statistics-workflow Task 5: refactored _call_* helpers to return (content, usage) tuples, added _extract_usage_tokens() for all SDK response shapes, and _execute_generation_once records a gated llm_call analytics event per call (missing usage => "unknown" sentinel, never a zero-dict).
 
 # CLASS_CONTRACT: LLMGenerationError
 # Purpose: Signal handled LLM generation failures for retry and fallback logic.
@@ -193,6 +194,114 @@ def _provider_from_credential_error(default_provider: str, response_body: dict) 
     if match:
         return match.group(1)
     return default_provider
+
+
+# FUNCTION_CONTRACT: _extract_usage_tokens
+# Purpose: Extract prompt/completion/total token counts from any SDK response shape; return None when
+#          no usage is present (NEVER a zero-dict) so callers can emit the "unknown" sentinel.
+# Input: response (Any) — an OpenAI/Anthropic/Google SDK response object or dict-shaped response.
+# Output: Optional[Dict[str, int]] — {"prompt_tokens", "completion_tokens", "total_tokens"} or None.
+# Side Effects: none (pure extraction).
+# Business Rules: Probe in priority order: OpenAI chat (.usage.prompt_tokens/.../total_tokens),
+#                 Responses-API/Anthropic (.usage.input_tokens/output_tokens, total=sum when absent),
+#                 Google (.usage_metadata.prompt_token_count/candidates_token_count/total_token_count),
+#                 plus dict-shaped equivalents (response["usage"] / response.get("usage")). Coerce with
+#                 int(...); default total = prompt + completion when missing. Return None if none yield
+#                 real values (so missing usage is distinguishable from a zero-cost call).
+# Failure Modes: never raises; malformed usage => None.
+# LINKS: PLAN 19 Task 5, knowledge-graph.xml#MOD-033
+def _extract_usage_tokens(response: Any) -> Optional[Dict[str, int]]:
+    usage = _get_usage_obj(response)
+    if usage is None:
+        return None
+
+    # block_token_extraction: try each SDK's canonical field names; return on the first real hit.
+    prompt = _coerce_token_field(
+        usage, ("prompt_tokens", "input_tokens", "prompt_token_count")
+    )
+    completion = _coerce_token_field(
+        usage, ("completion_tokens", "output_tokens", "candidates_token_count")
+    )
+    total = _coerce_token_field(usage, ("total_tokens", "total_token_count"))
+
+    # None for all three => no real usage values present.
+    if prompt is None and completion is None and total is None:
+        return None
+
+    prompt_v = prompt or 0
+    completion_v = completion or 0
+    total_v = total if total is not None else (prompt_v + completion_v)
+    return {
+        "prompt_tokens": int(prompt_v),
+        "completion_tokens": int(completion_v),
+        "total_tokens": int(total_v),
+    }
+
+
+# FUNCTION_CONTRACT: _get_usage_obj
+# Purpose: Pull the usage-bearing object off a response across SDK shapes (attr or dict).
+# Input: response (Any)
+# Output: Any — the usage sub-object/dict, or None when absent.
+# Side Effects: none.
+# Business Rules: checks response.usage then response.usage_metadata then response["usage"] /
+#                 response.get("usage"); tolerant of dicts and attribute objects.
+# Failure Modes: never raises.
+# LINKS: PLAN 19 Task 5
+def _get_usage_obj(response: Any) -> Any:
+    if response is None:
+        return None
+    # Google: usage_metadata is a sibling of .usage, not nested under it.
+    meta = _maybe_getattr(response, "usage_metadata")
+    if meta is not None:
+        return meta
+    usage = _maybe_getattr(response, "usage")
+    if usage is not None:
+        return usage
+    # dict-shaped response: response["usage"] / response.get("usage").
+    if isinstance(response, dict):
+        return response.get("usage")
+    return None
+
+
+# FUNCTION_CONTRACT: _maybe_getattr
+# Purpose: getattr/get fallback that tolerates both attribute objects and dicts without raising.
+# Input: obj (Any), name (str)
+# Output: Any — the value or None.
+# Side Effects: none.
+# Failure Modes: never raises (returns None on any access failure).
+# LINKS: PLAN 19 Task 5
+def _maybe_getattr(obj: Any, name: str) -> Any:
+    try:
+        if isinstance(obj, dict):
+            return obj.get(name)
+        return getattr(obj, name, None)
+    except Exception:
+        return None
+
+
+# FUNCTION_CONTRACT: _coerce_token_field
+# Purpose: Read the first present int-coercible field from a usage object among candidate names.
+# Input: usage (Any), names (tuple[str, ...])
+# Output: Optional[int] — the token count or None when no candidate is present.
+# Side Effects: none.
+# Business Rules: tolerant of attr/dict access; coerces via int() but returns None for None/missing.
+# Failure Modes: never raises (non-numeric => None).
+# LINKS: PLAN 19 Task 5
+def _coerce_token_field(usage: Any, names: tuple) -> Optional[int]:
+    for name in names:
+        raw = _maybe_getattr(usage, name)
+        if raw is None:
+            continue
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            try:
+                return int(float(raw))
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
 # FUNCTION_CONTRACT: _log_tenacity_retry
 # Purpose: Implement the  log tenacity retry helper for this module.
 # Input: retry_state (RetryCallState)
@@ -663,11 +772,12 @@ class LLMHandler:
     # FUNCTION_CONTRACT: _call_openai_compatible
     # Purpose: Implement the  call openai compatible helper for this module.
     # Input: provider (str), model (str), prompt (str), system_prompt (str), request_timeout (float)
-    # Output: str
+    # Output: Tuple[str, Optional[Dict[str, int]]] — (content, usage) where usage is extracted from the
+    #         SDK response object that produced the content (None when no usage is present).
     # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
     # Business Rules: Preserves the current validation and control flow for this call path.
     # Failure Modes: Propagates upstream exceptions and existing fallback paths.
-    # LINKS: requirements.xml#UC-001
+    # LINKS: requirements.xml#UC-001, PLAN 19 Task 5
     def _call_openai_compatible(
         self,
         provider: str,
@@ -675,7 +785,7 @@ class LLMHandler:
         prompt: str,
         system_prompt: str,
         request_timeout: float,
-    ) -> str:
+    ) -> Tuple[str, Optional[Dict[str, int]]]:
         api_key_env: str = f"{provider.upper()}_API_KEY"
         api_key: Optional[str] = os.getenv(api_key_env)
 
@@ -763,6 +873,7 @@ class LLMHandler:
         start_time: float = time.time()
 
         content: str = ""
+        response: Any = None
 
         if provider == "openai" and hasattr(client, "responses"):
             logger.log_api_request(
@@ -787,6 +898,7 @@ class LLMHandler:
                 logger.warning(
                     f"Responses API failed for {model}, falling back to chat.completions: {e}"
                 )
+                response = None
         if not content:
             # Guard: Vertex AI (via custom providers) rejects empty user content
             # with 400 INVALID_ARGUMENT and 'Model input cannot be empty'
@@ -818,22 +930,24 @@ class LLMHandler:
         duration: float = time.time() - start_time
         logger.log_api_response(provider, duration, content[:200] + "...")
 
-        return content
+        usage: Optional[Dict[str, int]] = _extract_usage_tokens(response)
+        return content, usage
     # FUNCTION_CONTRACT: _call_anthropic
     # Purpose: Implement the  call anthropic helper for this module.
     # Input: model (str), prompt (str), system_prompt (str), request_timeout (float)
-    # Output: str
+    # Output: Tuple[str, Optional[Dict[str, int]]] — (content, usage) extracted from the Anthropic
+    #         SDK response object (None when no usage is present).
     # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
     # Business Rules: Preserves the current validation and control flow for this call path.
     # Failure Modes: Propagates upstream exceptions and existing fallback paths.
-    # LINKS: requirements.xml#UC-001
+    # LINKS: requirements.xml#UC-001, PLAN 19 Task 5
     def _call_anthropic(
         self,
         model: str,
         prompt: str,
         system_prompt: str,
         request_timeout: float,
-    ) -> str:
+    ) -> Tuple[str, Optional[Dict[str, int]]]:
         api_key: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
         base_url: Optional[str] = os.getenv("ANTHROPIC_BASE_URL")
         if not api_key:
@@ -884,22 +998,24 @@ class LLMHandler:
             content = ""
         logger.log_api_response("anthropic", duration, content[:200] + "...")
 
-        return content
+        usage: Optional[Dict[str, int]] = _extract_usage_tokens(response)
+        return content, usage
     # FUNCTION_CONTRACT: _call_google
     # Purpose: Implement the  call google helper for this module.
     # Input: model (str), prompt (str), system_prompt (str), request_timeout (float)
-    # Output: str
+    # Output: Tuple[str, Optional[Dict[str, int]]] — (content, usage) extracted from the Google
+    #         SDK response object (None when no usage is present).
     # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
     # Business Rules: Preserves the current validation and control flow for this call path.
     # Failure Modes: Propagates upstream exceptions and existing fallback paths.
-    # LINKS: requirements.xml#UC-001
+    # LINKS: requirements.xml#UC-001, PLAN 19 Task 5
     def _call_google(
         self,
         model: str,
         prompt: str,
         system_prompt: str,
         request_timeout: float,
-    ) -> str:
+    ) -> Tuple[str, Optional[Dict[str, int]]]:
         api_key: Optional[str] = os.getenv("GEMINI_API_KEY")
         base_url: Optional[str] = os.getenv("GEMINI_BASE_URL")
         if not api_key:
@@ -949,7 +1065,8 @@ class LLMHandler:
         content: str = response.text or ""
         logger.log_api_response("google", duration, content[:200] + "...")
 
-        return content
+        usage: Optional[Dict[str, int]] = _extract_usage_tokens(response)
+        return content, usage
     # FUNCTION_CONTRACT: generate_keywords
     # Purpose: Implement the generate keywords helper for this module.
     # Input: text (str), provider (str), model (str), max_keywords (int = 15), custom_prompt (str = ''), force_refresh (bool = False)
@@ -1071,13 +1188,16 @@ class LLMHandler:
             parse_csv=parse_csv,
         )
     # FUNCTION_CONTRACT: _execute_generation_once
-    # Purpose: Implement the  execute generation once helper for this module.
+    # Purpose: Implement the  execute generation once helper for this module. Calls the provider-specific
+    #          _call_* helper (now returning (content, usage)), cleans/parses the content, and records an
+    #          llm_call analytics event per real LLM call (gated by analytics.capture_tokens).
     # Input: provider (str), model (str), text (str), system_prompt (str), parse_csv (bool = True)
-    # Output: Any
-    # Side Effects: Follows the existing state, file, or UI behavior implemented by this function.
-    # Business Rules: Preserves the current validation and control flow for this call path.
-    # Failure Modes: Propagates upstream exceptions and existing fallback paths.
-    # LINKS: requirements.xml#UC-001
+    # Output: Any — content str (parse_csv=False) or List[str] of keywords (parse_csv=True); unchanged.
+    # Side Effects: records an llm_call analytics event (success or error); never lets analytics break a run.
+    # Business Rules: Preserves the current validation and control flow for this call path; token capture
+    #                 respects analytics.capture_tokens (config-driven); missing usage => "unknown" sentinel.
+    # Failure Modes: Propagates upstream exceptions and existing fallback paths; records an error event first.
+    # LINKS: requirements.xml#UC-001, PLAN 19 Task 5
     def _execute_generation_once(
         self,
         provider: str,
@@ -1102,20 +1222,22 @@ class LLMHandler:
         )
 
         content: str = ""
+        usage: Optional[Dict[str, int]] = None
+        start_time: float = time.time()
         try:
             if provider == "anthropic":
-                content = self._call_anthropic(
+                content, usage = self._call_anthropic(
                     model, text, system_prompt, request_timeout=request_timeout
                 )
             elif provider == "google" or provider == "google gemini":
-                content = self._call_google(
+                content, usage = self._call_google(
                     model,
                     text,
                     system_prompt,
                     request_timeout=request_timeout,
                 )
             else:
-                content = self._call_openai_compatible(
+                content, usage = self._call_openai_compatible(
                     provider,
                     model,
                     text,
@@ -1123,8 +1245,17 @@ class LLMHandler:
                     request_timeout=request_timeout,
                 )
         except Exception as exc:
+            duration_ms = int((time.time() - start_time) * 1000)
             self._raise_if_non_retriable_credential_error(provider, exc)
+            # Record the error event (gated + swallowed) BEFORE re-raising so the failure path is visible.
+            self._record_llm_call_event(
+                provider, model, None, duration_ms, "error", error=str(exc) or type(exc).__name__
+            )
             raise
+
+        duration_ms = int((time.time() - start_time) * 1000)
+        # Record the success event (gated + swallowed); never let analytics break a generation.
+        self._record_llm_call_event(provider, model, usage, duration_ms, "success")
 
         # Clean LLM response: strip <thinking> blocks and other artifacts
         content = self._clean_llm_response(content)
@@ -1135,6 +1266,46 @@ class LLMHandler:
         # Parse CSV
         keywords: List[str] = [kw.strip() for kw in content.split(",")]
         return [kw for kw in keywords if kw]
+
+    # FUNCTION_CONTRACT: _record_llm_call_event
+    # Purpose: Record a privacy-safe llm_call analytics event per real LLM call; gated by
+    #          analytics.capture_tokens and wrapped so analytics can NEVER break a generation.
+    # Input: provider (str), model (str), usage (Optional[Dict[str,int]]), duration_ms (int),
+    #        status (str), error (Optional[str] = None)
+    # Output: None
+    # Side Effects: may write to the analytics store via record_workflow_event (atomically).
+    # Business Rules: reads analytics.capture_tokens from live config; builds tokens = usage dict when
+    #                 present else the "unknown" sentinel (NEVER a zero-dict); only passes error when
+    #                 status is failure; swallows ALL exceptions internally (logs at debug/warning).
+    # Failure Modes: never raises; any internal error is logged and discarded.
+    # LINKS: PLAN 19 Task 5, knowledge-graph.xml#MOD-033
+    def _record_llm_call_event(
+        self,
+        provider: str,
+        model: str,
+        usage: Optional[Dict[str, int]],
+        duration_ms: int,
+        status: str,
+        error: Optional[str] = None,
+    ) -> None:
+        try:
+            if not load_config().get("analytics", {}).get("capture_tokens", True):
+                return
+            # block_token_capture: missing usage -> "unknown" sentinel (NEVER a zero-dict).
+            tokens: Any = usage if isinstance(usage, dict) else "unknown"
+            fields: Dict[str, Any] = {
+                "provider": provider,
+                "model": model,
+                "run_id": self.run_label,
+                "status": status,
+                "duration_ms": duration_ms,
+                "tokens": tokens,
+            }
+            if status != "success" and error:
+                fields["error"] = error
+            record_workflow_event("llm_call", **fields)
+        except Exception as exc:  # pragma: no cover - robustness path
+            logger.warning(f"analytics llm_call event recording swallowed error: {exc!r}")
     # FUNCTION_CONTRACT: generate_seo_text
     # Purpose: Implement the generate seo text helper for this module.
     # Input: text (str), keywords (List[Dict[str, Any]]), provider (str), model (str), language (str = 'Russian'), custom_prompt (str = ''), page_type (str = 'product')

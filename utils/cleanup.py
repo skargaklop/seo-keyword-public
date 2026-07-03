@@ -12,18 +12,20 @@ DEFAULT_API_LOG_RETENTION_DAYS = LOGGING_CONFIG.get("api_retention_days", 30)
 
 
 # MODULE_CONTRACT: utils/cleanup
-# Purpose: Retention-based file cleanup for outputs/, API logs, and history entries
+# Purpose: Retention-based file cleanup for outputs/, API logs, history entries, and analytics events
 # Rationale: Prevents unbounded disk growth by removing aged artifacts at startup
-# Dependencies: config.settings, utils.history, utils.logger
+# Dependencies: config.settings, utils.history, utils.logger, utils.analytics
 # Exports: cleanup_old_files, cleanup_api_logs, run_startup_cleanup
-# LINKS: requirements.xml#UC-001, knowledge-graph.xml#MOD-001
+# LINKS: requirements.xml#UC-001, knowledge-graph.xml#MOD-001, knowledge-graph.xml#MOD-033, PLAN 19 Task 8
 # MODULE_MAP: utils/cleanup.py
 # Public Functions: cleanup_old_files, cleanup_api_logs, run_startup_cleanup
 # Private Helpers: (none)
-# Key Semantic Blocks: block_cleanup_outputs_file_retention, block_cleanup_startup_all_tasks
+# Key Semantic Blocks: block_cleanup_outputs_file_retention, block_cleanup_startup_all_tasks,
+#                      block_cleanup_analytics_retention
 # Critical Flows: run_startup_cleanup called at app startup to enforce retention policies
+#                 (outputs, API logs, history, and analytics events when enabled)
 # Verification: V-SUITE
-# CHANGE_SUMMARY: Added module-level contracts; added FUNCTION_CONTRACT blocks for all three functions; removed post-declaration docstrings
+# CHANGE_SUMMARY: Added module-level contracts; added FUNCTION_CONTRACT blocks for all three functions; removed post-declaration docstrings. statistics-workflow Task 8: run_startup_cleanup now trims the analytics event store when analytics.enabled is True (retention_days falls back to history.retention_days, never hardcoded); wrapped defensively so analytics retention never breaks startup; reports analytics_trimmed in the return dict.
 # FUNCTION_CONTRACT: cleanup_old_files
 # Purpose: Delete files older than a configured age from a directory, with symlink and path-traversal protection
 # Input: directory (Path), max_age_days (int | None) — 0 disables cleanup; None reads from config
@@ -120,11 +122,15 @@ def cleanup_api_logs(
 # FUNCTION_CONTRACT: run_startup_cleanup
 # Purpose: Execute all retention-based cleanup tasks at application startup
 # Input: (none)
-# Output: dict[str, int] — counts of deleted outputs, API logs, and history entries
-# Side Effects: delegates to cleanup_old_files, cleanup_api_logs, HistoryManager.trim_history_entries
-# Business Rules: reads retention settings from current config each call
-# Failure Modes: delegates error handling to sub-functions
-# LINKS: requirements.xml#UC-001
+# Output: dict[str, int] — counts of deleted outputs, API logs, history entries, and analytics-trimmed events
+# Side Effects: delegates to cleanup_old_files, cleanup_api_logs, HistoryManager.trim_history_entries;
+#               conditionally trims the analytics event store via utils.analytics.trim_events when enabled
+# Business Rules: reads retention settings from current config each call. analytics retention only runs
+#                 when analytics.enabled is True; analytics.retention_days falls back to history.retention_days
+#                 when absent (NEVER a hardcoded default). Analytics trim is wrapped defensively so a failure
+#                 there can NEVER break app startup.
+# Failure Modes: delegates error handling to sub-functions; analytics trim errors are swallowed -> analytics_trimmed=0
+# LINKS: requirements.xml#UC-001, knowledge-graph.xml#MOD-033, PLAN 19 Task 8
 def run_startup_cleanup() -> dict[str, int]:
     config = load_config()
     outputs_deleted = cleanup_old_files(
@@ -142,8 +148,27 @@ def run_startup_cleanup() -> dict[str, int]:
     history_removed = HistoryManager.trim_history_entries(
         max_age_days=int(config.get("history", {}).get("retention_days", 30))
     )
+
+    # Analytics retention: only when enabled. retention_days falls back to the history retention
+    # value when absent (NEVER a hardcoded default). Wrapped defensively so analytics retention
+    # can NEVER break app startup.
+    analytics_cfg = config.get("analytics", {})
+    analytics_trimmed = 0
+    if analytics_cfg.get("enabled", False):
+        try:
+            from utils.analytics import trim_events
+
+            analytics_retention = analytics_cfg.get("retention_days")
+            if analytics_retention is None:
+                analytics_retention = config.get("history", {}).get("retention_days", 30)
+            analytics_trimmed = trim_events(max_age_days=int(analytics_retention))
+        except Exception as exc:  # pragma: no cover - robustness path; startup must never break
+            logger.warning(f"Analytics retention trim skipped due to error: {exc}")
+            analytics_trimmed = 0
+
     return {
         "outputs_deleted": len(outputs_deleted),
         "api_logs_deleted": len(api_logs_deleted),
         "history_removed": history_removed,
+        "analytics_trimmed": analytics_trimmed,
     }

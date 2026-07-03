@@ -15,6 +15,7 @@ from utils.google_ads_client import GoogleAdsHandler
 from utils.keyword_processor import KeywordProcessor
 from utils.llm_handler import LLMHandler
 from utils.logger import logger
+from utils.analytics import record_workflow_event
 from utils.request_cache import (
     build_cache_key,
     request_cache,
@@ -323,7 +324,7 @@ def get_selected_keyword_candidates(
 # MODULE_CONTRACT: utils/pipeline
 # Purpose: Orchestrate three workflow modes — URL→LLM→Ads, URL→Ads, Keyword→Ads — with progress reporting, keyword-gated SERP handoffs, crawl math reporting, and Trends-as-stage integration
 # Rationale: Encapsulates end-to-end keyword analysis pipelines that coordinate scraping, LLM extraction, Ads metrics, SERP math, bounded crawl reports, and Google Trends analysis as optional stage
-# Dependencies: utils.google_ads_client, utils.llm_handler, utils.scraper, utils.keyword_processor, utils.validator, config.i18n, config.settings, utils.logger, utils.serp_client, utils.seo_math_analysis, utils.crawler, utils.google_trends_client, utils.request_cache
+# Dependencies: utils.google_ads_client, utils.llm_handler, utils.scraper, utils.keyword_processor, utils.validator, config.i18n, config.settings, utils.logger, utils.serp_client, utils.seo_math_analysis, utils.crawler, utils.google_trends_client, utils.request_cache, utils.analytics
 # Exports: run_llm_url_workflow, run_url_seed_workflow, run_keyword_seed_workflow, run_llm_keyword_stage_from_checkpoint, prepare_urls_for_seo, process_flow, run_serp_analysis_workflow, run_serp_chain_to_ads_workflow, run_llm_url_keyword_extraction_stage, build_serp_math_profile, build_reverse_math_report, build_crawl_math_report, run_crawl_math_report_workflow, run_google_trends_workflow, run_trends_stage_from_selection, run_trends_stage_from_keywords, run_keyword_to_llm_workflow, KEYWORD_SEED_SOURCE_URL, RESULT_COLUMNS, is_url_like_query, filter_serp_eligible_keywords, store_keyword_candidates, get_selected_keyword_candidates
 # LINKS: requirements.xml#UC-001, requirements.xml#UC-002, requirements.xml#UC-003, knowledge-graph.xml#MOD-002, PLAN 08-01, PLAN 08-02 Task 6, PLAN 10-02 Task 9
 # MODULE_MAP: utils/pipeline.py
@@ -332,7 +333,7 @@ def get_selected_keyword_candidates(
 # Key Semantic Blocks: block_pipeline_helpers_df_normalize, block_pipeline_checkpoint_regenerate, block_pipeline_compat_alias_delegate, block_pipeline_keyword_candidates, block_pipeline_serp_keyword_guard, block_pipeline_serp_math_profile, block_pipeline_reverse_math_report, block_pipeline_crawl_math_report, block_pipeline_trends_as_stage
 # Critical Flows: app.py dispatches to one of the workflow functions based on selected mode; SERP/crawl results -> math profile -> UI rendering; Trends stage accepts checkbox-selected keywords from any workflow
 # Verification: V-MOD-002
-# CHANGE_SUMMARY: Added keyword candidate model and helpers for gated SERP workflows; added URL-like query detection; added staged LLM keyword extraction; updated MODULE_CONTRACT with new exports and semantic blocks; Phase 8 Task 6: added SERP math profile building function; Phase 8 Plan 03: added cached crawl math report orchestration and reverse SERP/Ads math report enrichment; Phase 9 review fix: row-scoped SERP source matching and tuple-consistent Ads enrichment; Phase 10 Task 9: added Trends-as-stage functions.
+# CHANGE_SUMMARY: Added keyword candidate model and helpers for gated SERP workflows; added URL-like query detection; added staged LLM keyword extraction; updated MODULE_CONTRACT with new exports and semantic blocks; Phase 8 Task 6: added SERP math profile building function; Phase 8 Plan 03: added cached crawl math report orchestration and reverse SERP/Ads math report enrichment; Phase 9 review fix: row-scoped SERP source matching and tuple-consistent Ads enrichment; Phase 10 Task 9: added Trends-as-stage functions. statistics-workflow Task 4: instrumented stable stage-completion boundaries (scrape_prepared, url_seed_completed, llm_completed) with privacy-safe record_workflow_event() stage_completed events.
 def _format_pipeline_message(key: str, **kwargs: object) -> str:
     return t(key, **kwargs)
 
@@ -1011,6 +1012,13 @@ def prepare_urls_for_seo(
     progress_bar.progress(1.0, text=_format_pipeline_message("pipeline_done"))
     status_text.success(_format_pipeline_message("pipeline_analysis_complete"))
     logger.info(f"{run_prefix}Prepared {len(scraped_content)} URL(s) for SEO flow")
+    # statistics-workflow Task 4: record the scrape_prepared stage boundary.
+    record_workflow_event(
+        "stage_completed",
+        run_id=run_id,
+        stage="scrape_prepared",
+        counts={"urls": len(scraped_content)},
+    )
     return scraped_content
 
 
@@ -1296,6 +1304,13 @@ def run_url_seed_workflow(
     progress_bar.progress(1.0, text=_format_pipeline_message("pipeline_done"))
     status_text.success(_format_pipeline_message("pipeline_analysis_complete"))
     logger.info(f"{run_prefix}URL seed workflow completed for {len(valid_urls)} URL(s)")
+    # statistics-workflow Task 4: record the url_seed_completed stage boundary.
+    record_workflow_event(
+        "stage_completed",
+        run_id=run_id,
+        stage="url_seed_completed",
+        counts={"urls": len(valid_urls)},
+    )
     return _store_processed_data(processed_df, scraped_content={})
 
 
@@ -2109,6 +2124,16 @@ def run_llm_url_keyword_extraction_stage(
     progress_bar.progress(1.0, text=_format_pipeline_message("pipeline_done"))
     status_text.success(_format_pipeline_message("pipeline_analysis_complete"))
     logger.info(f"{run_prefix}LLM extraction stage completed for {len(processed_source_keywords)} URL(s)")
+    # statistics-workflow Task 4: record the llm_completed stage boundary. provider/model are
+    # function parameters here; counts.keywords_urls = URLs that produced keyword candidates.
+    record_workflow_event(
+        "stage_completed",
+        run_id=run_id,
+        stage="llm_completed",
+        provider=provider,
+        model=model,
+        counts={"keywords_urls": len(processed_source_keywords)},
+    )
     return processed_source_keywords
 
 

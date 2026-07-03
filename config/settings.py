@@ -17,15 +17,15 @@ CONFIG_PATH = BASE_DIR / "config" / "settings.yaml"
 # Purpose: Central configuration loader and derived constants for the application
 # Rationale: Single source of truth for all runtime configuration; reads settings.yaml and .env once
 # Dependencies: yaml, python-dotenv, config/settings.yaml
-# Exports: load_config, save_config, config, RETRY_CONFIG, LLM_CONFIG, KEYWORDS_CONFIG, SCRAPING_CONFIG, CLEANUP_CONFIG, GOOGLE_ADS_CONFIG, SERP_CONFIG, SEO_MATH_CONFIG, CRAWLER_CONFIG, LOGGING_CONFIG, HISTORY_CONFIG, UPLOADS_CONFIG, UI_CONFIG, CACHE_CONFIG, GOOGLE_TRENDS_CONFIG, SCRAPER_CONFIG, RETRY_ATTEMPTS, RETRY_DELAY, FALLBACK_PROVIDER, FALLBACK_MODEL, LLM_MODELS, KEYWORD_EXTRACTION_PROMPT, SEO_DESCRIPTION_PROMPT, LLM_TIMEOUT, LLM_DELAY_BETWEEN_REQUESTS, CUSTOM_PROVIDERS, SERP_PROVIDER_OPTIONS, SERP_LOCATION_OPTIONS, SERP_LANGUAGE_OPTIONS, SERP_DEVICE_OPTIONS, SERP_SEARCH_TYPE_OPTIONS, SERP_TIME_PERIOD_OPTIONS, SERP_SAFE_SEARCH_OPTIONS, SERP_GOOGLE_DOMAIN_OPTIONS, get_available_serp_providers
-# LINKS: requirements.xml#UC-001, knowledge-graph.xml#MOD-001, PLAN 08-02 Task 5, PLAN 10-02 Task 1
+# Exports: load_config, save_config, config, RETRY_CONFIG, LLM_CONFIG, KEYWORDS_CONFIG, SCRAPING_CONFIG, CLEANUP_CONFIG, GOOGLE_ADS_CONFIG, SERP_CONFIG, SEO_MATH_CONFIG, CRAWLER_CONFIG, LOGGING_CONFIG, HISTORY_CONFIG, UPLOADS_CONFIG, UI_CONFIG, CACHE_CONFIG, GOOGLE_TRENDS_CONFIG, SCRAPER_CONFIG, ANALYTICS_CONFIG, RETRY_ATTEMPTS, RETRY_DELAY, FALLBACK_PROVIDER, FALLBACK_MODEL, LLM_MODELS, KEYWORD_EXTRACTION_PROMPT, SEO_DESCRIPTION_PROMPT, LLM_TIMEOUT, LLM_DELAY_BETWEEN_REQUESTS, CUSTOM_PROVIDERS, SERP_PROVIDER_OPTIONS, SERP_LOCATION_OPTIONS, SERP_LANGUAGE_OPTIONS, SERP_DEVICE_OPTIONS, SERP_SEARCH_TYPE_OPTIONS, SERP_TIME_PERIOD_OPTIONS, SERP_SAFE_SEARCH_OPTIONS, SERP_GOOGLE_DOMAIN_OPTIONS, get_available_serp_providers
+# LINKS: requirements.xml#UC-001, knowledge-graph.xml#MOD-001, PLAN 08-02 Task 5, PLAN 10-02 Task 1, PLAN statistics-workflow Task 2
 # MODULE_MAP: config/settings.py
 # Public Functions: load_config, save_config
 # Private Helpers: (none)
 # Key Semantic Blocks: block_settings_load_yaml_parse, block_settings_derived_constants
 # Critical Flows: every module reads derived constants; sidebar writes back via save_config
 # Verification: V-SUITE
-# CHANGE_SUMMARY: Added module-level contracts; added FUNCTION_CONTRACT blocks for load_config and save_config; removed post-declaration docstrings; added SERP UI constants (SERP_PROVIDER_OPTIONS, SERP_LOCATION_OPTIONS, SERP_LANGUAGE_OPTIONS) and get_available_serp_providers(); added Phase 6 advanced SERP option dicts (SERP_DEVICE_OPTIONS, SERP_SEARCH_TYPE_OPTIONS, SERP_SAFE_SEARCH_OPTIONS, SERP_GOOGLE_DOMAIN_OPTIONS); Phase 7 Cycle 3: removed HasData, added SearchApi.io, Zenserp, ScraperAPI, DataForSEO, Serpstat to SERP_PROVIDER_OPTIONS; _SERP_ENV_MAP updated with tuple env_var for DataForSEO dual auth; get_available_serp_providers now handles tuple env vars via _check_env_keys helper; Phase 8 Task 5: added SEO_MATH_CONFIG export; Phase 8 Plan 03: added top-level CRAWLER_CONFIG export; Phase 10 Task 1: added CACHE_CONFIG, GOOGLE_TRENDS_CONFIG, SCRAPER_CONFIG exports; Roadmap Task 1: SEO_DESCRIPTION_PROMPT now carries appended TIER 4 HUMANIZER + SELF-CHECK stages (sourced from docs/humanizer-skill.md) — derived export unchanged
+# CHANGE_SUMMARY: Added module-level contracts; added FUNCTION_CONTRACT blocks for load_config and save_config; removed post-declaration docstrings; added SERP UI constants (SERP_PROVIDER_OPTIONS, SERP_LOCATION_OPTIONS, SERP_LANGUAGE_OPTIONS) and get_available_serp_providers(); added Phase 6 advanced SERP option dicts (SERP_DEVICE_OPTIONS, SERP_SEARCH_TYPE_OPTIONS, SERP_SAFE_SEARCH_OPTIONS, SERP_GOOGLE_DOMAIN_OPTIONS); Phase 7 Cycle 3: removed HasData, added SearchApi.io, Zenserp, ScraperAPI, DataForSEO, Serpstat to SERP_PROVIDER_OPTIONS; _SERP_ENV_MAP updated with tuple env_var for DataForSEO dual auth; get_available_serp_providers now handles tuple env vars via _check_env_keys helper; Phase 8 Task 5: added SEO_MATH_CONFIG export; Phase 8 Plan 03: added top-level CRAWLER_CONFIG export; Phase 10 Task 1: added CACHE_CONFIG, GOOGLE_TRENDS_CONFIG, SCRAPER_CONFIG exports; statistics-workflow Task 2: added ANALYTICS_CONFIG export; Roadmap Task 1: SEO_DESCRIPTION_PROMPT now carries appended TIER 4 HUMANIZER + SELF-CHECK stages (sourced from docs/humanizer-skill.md) — derived export unchanged
 # FUNCTION_CONTRACT: load_config
 # Purpose: Parse settings.yaml into a nested dict, raising if the file is absent
 # Input: (none)
@@ -87,6 +87,7 @@ UI_CONFIG = config.get("ui", {})
 CACHE_CONFIG = config.get("cache", {})
 GOOGLE_TRENDS_CONFIG = config.get("google_trends", {})
 SCRAPER_CONFIG = config.get("scraper", {"browser_enabled": False})
+ANALYTICS_CONFIG = config.get("analytics", {})
 
 # Derived constants for easy access
 RETRY_ATTEMPTS = RETRY_CONFIG.get("max_attempts", 4)

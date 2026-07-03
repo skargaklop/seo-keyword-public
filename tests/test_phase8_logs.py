@@ -95,7 +95,8 @@ def test_non_retriable_credential_error_attempts_fallback_once(
         calls.append((provider, model))
         if provider == "omniroute":
             raise _FakeCredentialError("No credentials for provider: nvidia")
-        return "fallback keyword"
+        # Post-refactor: _call_openai_compatible returns a (content, usage) tuple.
+        return "fallback keyword", None
 
     monkeypatch.setattr(
         LLMHandler,

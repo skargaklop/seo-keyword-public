@@ -7,19 +7,20 @@
 # MODULE_MAP: components/sidebar.py
 # Public Functions: render_sidebar
 # Private Helpers: _normalize_log_level_name, _safe_log_level_index, _normalize_language_value, _resolve_google_ads_selection, _build_sidebar_config_updates, _load_saved_ui
-# Key Semantic Blocks: block_sidebar_language_select, block_sidebar_provider_settings, block_sidebar_google_ads_settings, block_sidebar_prompt_settings, block_sidebar_logging_settings, block_sidebar_crawl_settings
+# Key Semantic Blocks: block_sidebar_language_select, block_sidebar_provider_settings, block_sidebar_google_ads_settings, block_sidebar_prompt_settings, block_sidebar_logging_settings, block_sidebar_crawl_settings, block_sidebar_analytics_settings
 # Critical Flows: load config -> render sidebar -> validate selections -> save config
 # Verification: python -m py_compile, python -m ruff check ., python -m pytest -q
-# CHANGE_SUMMARY: Added dynamic model selector with cache; added Mistral to provider_keys; added custom provider UI with validation; removed hardcoded default_presets; added SERP provider config block before Google Ads; added model search filter; SERP settings persist to settings.yaml; Phase 8 Plan 03: added top-level crawler settings controls and persistence
+# CHANGE_SUMMARY: Added dynamic model selector with cache; added Mistral to provider_keys; added custom provider UI with validation; removed hardcoded default_presets; added SERP provider config block before Google Ads; added model search filter; SERP settings persist to settings.yaml; Phase 8 Plan 03: added top-level crawler settings controls and persistence; statistics-workflow Task 2: added block_sidebar_analytics_settings (enabled/retention/max_events/capture_tokens/capture_repeated_terms) with persistence via _build_sidebar_config_updates
 
 import html
 import os
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import streamlit as st
 import utils.browser_scraper_trends  # noqa: F401 — registers browser_scraper_trends provider at module load
 from config.i18n import t
 from config.settings import (
+    ANALYTICS_CONFIG,
     CACHE_CONFIG,
     CLEANUP_CONFIG,
     CRAWLER_CONFIG,
@@ -204,6 +205,55 @@ def _resolve_google_ads_selection(
         default_language,
     )
     return location_name, language_name
+# FUNCTION_CONTRACT: _normalize_domain_list
+# Purpose: Normalize a raw textarea value (str) or list into a deduplicated,
+#          order-preserving list of lowercased host tokens. Splits on newlines
+#          and commas; drops empty entries. Empty list means "track all observed".
+# Input: raw (str | list[str] | None)
+# Output: List[str]
+# Side Effects: Pure function — no I/O, no state mutation.
+# Business Rules: Newline OR comma separated; strip whitespace + lowercase per token.
+# Failure Modes: None — invalid input is coerced to [].
+# LINKS: PHASE-20 Task 3
+def _normalize_domain_list(raw: Any) -> List[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        tokens = raw
+    else:
+        # Split on newlines and commas simultaneously.
+        tokens = str(raw).replace("\r", "\n").replace(",", "\n").split("\n")
+    result: List[str] = []
+    for token in tokens:
+        cleaned = str(token).strip().lower()
+        if cleaned and cleaned not in result:
+            result.append(cleaned)
+    return result
+# FUNCTION_CONTRACT: _normalize_query_list
+# Purpose: Normalize a raw textarea value (str) or list into a deduplicated,
+#          order-preserving list of whitespace-trimmed query tokens. Splits on
+#          newlines and commas; collapses internal whitespace to single spaces;
+#          drops empty entries. Empty list means "track all observed".
+# Input: raw (str | list[str] | None)
+# Output: List[str]
+# Side Effects: Pure function — no I/O, no state mutation.
+# Business Rules: Newline OR comma separated; collapse internal whitespace per token.
+# Failure Modes: None — invalid input is coerced to [].
+# LINKS: PHASE-20 Task 3
+def _normalize_query_list(raw: Any) -> List[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        tokens = raw
+    else:
+        tokens = str(raw).replace("\r", "\n").replace(",", "\n").split("\n")
+    result: List[str] = []
+    for token in tokens:
+        # Collapse internal whitespace runs to single spaces and trim.
+        cleaned = " ".join(str(token).split())
+        if cleaned and cleaned not in result:
+            result.append(cleaned)
+    return result
 # FUNCTION_CONTRACT: _build_sidebar_config_updates
 # Purpose: Implement the  build sidebar config updates helper for this module.
 # Input: current_config (Dict[str, Any]), values (Dict[str, Any])
@@ -253,6 +303,17 @@ def _build_sidebar_config_updates(
 
     history_config = current_config.setdefault("history", {})
     history_config["retention_days"] = values["history_retention_days"]
+
+    analytics_config = current_config.setdefault("analytics", {})
+    analytics_config["enabled"] = values.get("analytics_enabled", True)
+    analytics_config["retention_days"] = values.get(
+        "analytics_retention_days", values.get("history_retention_days", 90)
+    )
+    analytics_config["max_events"] = values.get("analytics_max_events", 5000)
+    analytics_config["capture_tokens"] = values.get("analytics_capture_tokens", True)
+    analytics_config["capture_repeated_terms"] = values.get(
+        "analytics_capture_repeated_terms", True
+    )
 
     uploads_config = current_config.setdefault("uploads", {})
     uploads_config["max_file_size_mb"] = values["upload_max_file_size_mb"]
@@ -375,6 +436,35 @@ def _build_sidebar_config_updates(
     )
     seo_math_config["strip_suffixes"] = _setting_value(
         "seo_math_strip_suffixes", "strip_suffixes", SEO_MATH_CONFIG, False
+    )
+    # PHASE-20 / STEP-2003: tracked SERP/math statistics settings — newline/comma-separated
+    # textareas normalized to lowercased-host list / whitespace-trimmed query list. Empty list
+    # means "track all observed". track_serp_math_statistics is the master toggle.
+    seo_math_config["track_serp_math_statistics"] = bool(
+        values.get(
+            "seo_math_track_serp_math_statistics",
+            seo_math_config.get(
+                "track_serp_math_statistics",
+                SEO_MATH_CONFIG.get("track_serp_math_statistics", True),
+            ),
+        )
+    )
+    seo_math_config["tracked_websites"] = _normalize_domain_list(
+        values.get(
+            "seo_math_tracked_websites_text",
+            seo_math_config.get(
+                "tracked_websites", SEO_MATH_CONFIG.get("tracked_websites", [])
+            ),
+        )
+    )
+    seo_math_config["tracked_search_queries"] = _normalize_query_list(
+        values.get(
+            "seo_math_tracked_search_queries_text",
+            seo_math_config.get(
+                "tracked_search_queries",
+                SEO_MATH_CONFIG.get("tracked_search_queries", []),
+            ),
+        )
     )
     bm25f_params = seo_math_config.setdefault("bm25f_params", {})
     default_bm25f = SEO_MATH_CONFIG.get("bm25f_params", {})
@@ -1234,6 +1324,32 @@ def render_sidebar() -> Dict[str, Any]:
                         )
                     else:
                         st.success(t("lemmatizer_dependencies_ready"))
+                # PHASE-20 Task 3: tracked SERP/math statistics controls.
+                _sync_sidebar_widget_from_config(
+                    "seo_math_track_serp_math_statistics_checkbox",
+                    bool(_seo_math_value("track_serp_math_statistics", True)),
+                )
+                seo_math_track_serp_math_statistics = st.checkbox(
+                    t("seo_math_track_serp_math_statistics"),
+                    key="seo_math_track_serp_math_statistics_checkbox",
+                    help=t("seo_math_track_serp_math_statistics_help"),
+                )
+                seo_math_tracked_websites_text = st.text_area(
+                    t("seo_math_tracked_websites"),
+                    value="\n".join(
+                        _seo_math_value("tracked_websites", []) or []
+                    ),
+                    key="seo_math_tracked_websites_textarea",
+                    help=t("seo_math_tracked_websites_help"),
+                )
+                seo_math_tracked_search_queries_text = st.text_area(
+                    t("seo_math_tracked_search_queries"),
+                    value="\n".join(
+                        _seo_math_value("tracked_search_queries", []) or []
+                    ),
+                    key="seo_math_tracked_search_queries_textarea",
+                    help=t("seo_math_tracked_search_queries_help"),
+                )
                 bm25f_params = current_seo_math_config.get("bm25f_params", {})
                 default_bm25f_params = SEO_MATH_CONFIG.get("bm25f_params", {})
                 st.caption(t("seo_math_bm25f_params"))
@@ -1403,6 +1519,16 @@ def render_sidebar() -> Dict[str, Any]:
             )
             seo_math_use_paa = bool(_seo_math_value("use_people_also_ask", True))
             seo_math_strip_suffixes = bool(_seo_math_value("strip_suffixes", False))
+            # PHASE-20 Task 3: read tracked settings from config in the non-interactive path.
+            seo_math_track_serp_math_statistics = bool(
+                _seo_math_value("track_serp_math_statistics", True)
+            )
+            seo_math_tracked_websites_text = "\n".join(
+                _seo_math_value("tracked_websites", []) or []
+            )
+            seo_math_tracked_search_queries_text = "\n".join(
+                _seo_math_value("tracked_search_queries", []) or []
+            )
             bm25f_params = current_seo_math_config.get("bm25f_params", {})
             default_bm25f_params = SEO_MATH_CONFIG.get("bm25f_params", {})
             seo_math_bm25f_k1 = float(bm25f_params.get("k1", default_bm25f_params.get("k1", 1.2)))
@@ -2083,6 +2209,48 @@ def render_sidebar() -> Dict[str, Any]:
 
         st.divider()
 
+        # --- Usage statistics (analytics) ---
+        _render_section_header(
+            t("analytics_section_title"), t("analytics_section_title"), "blue"
+        )
+        current_analytics_config = current_config.get("analytics", {})
+        analytics_enabled: bool = st.checkbox(
+            t("analytics_enabled_label"),
+            value=bool(current_analytics_config.get("enabled", True)),
+        )
+        analytics_retention_days: int = st.number_input(
+            t("analytics_retention_label"),
+            min_value=1,
+            max_value=365,
+            value=int(
+                current_analytics_config.get(
+                    "retention_days", ANALYTICS_CONFIG.get("retention_days", 90)
+                )
+            ),
+            step=1,
+        )
+        analytics_max_events: int = st.number_input(
+            t("analytics_max_events_label"),
+            min_value=100,
+            max_value=100000,
+            value=int(
+                current_analytics_config.get(
+                    "max_events", ANALYTICS_CONFIG.get("max_events", 5000)
+                )
+            ),
+            step=500,
+        )
+        analytics_capture_tokens: bool = st.checkbox(
+            t("analytics_capture_tokens_label"),
+            value=bool(current_analytics_config.get("capture_tokens", True)),
+        )
+        analytics_capture_repeated_terms: bool = st.checkbox(
+            t("analytics_capture_repeated_terms_label"),
+            value=bool(current_analytics_config.get("capture_repeated_terms", True)),
+        )
+
+        st.divider()
+
         # --- Export & Cleanup ---
         _render_section_header(t("export_header"), t("sidebar_export_desc"), "green")
         auto_save_excel: bool = st.checkbox(t("auto_save_excel"), value=True)
@@ -2122,6 +2290,11 @@ def render_sidebar() -> Dict[str, Any]:
                             "error_log_level": error_log_level,
                             "history_retention_days": history_retention_days,
                             "log_test_runs": log_test_runs,
+                            "analytics_enabled": analytics_enabled,
+                            "analytics_retention_days": analytics_retention_days,
+                            "analytics_max_events": analytics_max_events,
+                            "analytics_capture_tokens": analytics_capture_tokens,
+                            "analytics_capture_repeated_terms": analytics_capture_repeated_terms,
                             "provider": provider,
                             "model_name": model_name,
                             "max_keywords": max_keywords,
@@ -2150,6 +2323,9 @@ def render_sidebar() -> Dict[str, Any]:
                             "seo_math_use_related": seo_math_use_related,
                             "seo_math_use_paa": seo_math_use_paa,
                             "seo_math_strip_suffixes": seo_math_strip_suffixes,
+                            "seo_math_track_serp_math_statistics": seo_math_track_serp_math_statistics,
+                            "seo_math_tracked_websites_text": seo_math_tracked_websites_text,
+                            "seo_math_tracked_search_queries_text": seo_math_tracked_search_queries_text,
                             "seo_math_bm25f_k1": seo_math_bm25f_k1,
                             "seo_math_bm25f_b_body": seo_math_bm25f_b_body,
                             "seo_math_bm25f_b_title": seo_math_bm25f_b_title,

@@ -38,8 +38,11 @@ Check out the GRACE artifacts in /docs folder to get a better understanding
 - **DO** get explicit approval before any infrastructure change (SSH host, cron, services).
 - **DO** always consider 3, 5, or 7 possible causes for a problem or ways to resolve a user request before acting.
 - **DO** before "stop" always check .py files via Ruff and pytest.
-- **DO** keep the GRACE artifacts up to date.
+- **DO** before "stop" always check files with code via available linter and run tests.
+- **DO** before "stop" ensure that all subagents executed their tasks.
+- **DO** Keep the GRACE artifacts up to date, if GRACE framework is used in this project.
 - **DO** make Targeted Edits (Narrow Patching): Prefer small, accurate file edits (narrow patches) over full file rewrites. Never fully rewrite large system, JSON, or Markdown files, as this causes formatting anomalies and massive diffs.
+- **DON'T** report to user about task completion while subagent are running.
 - **DON'T** make concurrent writes to shared files. Serialize them.
 - **DON'T** commit secrets.
 - **For commit message use only fix/feat/chore/docs/refactor/test types. Contributor in commit options - only user without any co author**

@@ -1,18 +1,19 @@
 ﻿# MODULE_CONTRACT: components/results
-# Purpose: Streamlit results UI for keyword analysis, keyword selection, ideas generation, SEO generation, history views, crawl reports, SERP math reports, generation quality reports, generated text math reports, and Trends-as-stage integration
+# Purpose: Streamlit results UI for keyword analysis, keyword selection, ideas generation, SEO generation, history views, crawl reports, SERP math reports, generation quality reports, generated text math reports, Trends-as-stage integration, and the statistics dashboard shell
 # Rationale: Keep the post-analysis rendering and export workflow explicit for GRACE adoption and review
-# Dependencies: pandas, streamlit, config.settings, config.i18n, utils.logger, utils.llm_handler, utils.excel_exporter, utils.history, utils.google_ads_client, utils.pipeline, utils.seo_math_analysis
-# Exports: render_keyword_results, render_scraping_preview, render_keyword_selection, render_keyword_ideas_generation, render_seo_generation, render_seo_results, render_history, render_serp_results, render_serp_related_searches, render_serp_chain_to_ads, render_serp_chained_ads_results, render_keyword_candidate_selector, render_ads_keyword_serp_handoff, render_chained_serp_results, render_bidirectional_chain_buttons, render_serp_math_report, render_crawl_math_report, render_generation_quality_report, render_generated_text_math_report, render_google_trends_results, render_serp_domain_metrics
-# LINKS: requirements.xml#UC-004, requirements.xml#UC-005, requirements.xml#UC-006, knowledge-graph.xml#MOD-001, PLAN 08-01, PLAN 08-02 Task 6, PLAN 08-02 Task 7, PLAN 10-02 Task 9, PLAN 15 Task 3
+# Dependencies: pandas, streamlit, config.settings, config.i18n, utils.logger, utils.llm_handler, utils.excel_exporter, utils.history, utils.google_ads_client, utils.pipeline, utils.seo_math_analysis, utils.analytics
+# Exports: render_keyword_results, render_scraping_preview, render_keyword_selection, render_keyword_ideas_generation, render_seo_generation, render_seo_results, render_history, render_serp_results, render_serp_related_searches, render_serp_chain_to_ads, render_serp_chained_ads_results, render_keyword_candidate_selector, render_ads_keyword_serp_handoff, render_chained_serp_results, render_bidirectional_chain_buttons, render_serp_math_report, render_crawl_math_report, render_generation_quality_report, render_generated_text_math_report, render_google_trends_results, render_serp_domain_metrics, render_statistics_dashboard
+# LINKS: requirements.xml#UC-004, requirements.xml#UC-005, requirements.xml#UC-006, knowledge-graph.xml#MOD-001, knowledge-graph.xml#MOD-033, PLAN 08-01, PLAN 08-02 Task 6, PLAN 08-02 Task 7, PLAN 10-02 Task 9, PLAN 15 Task 3, PLAN 19 Task 3
 # MODULE_MAP: components/results.py
-# Public Functions: render_keyword_results, render_scraping_preview, render_keyword_selection, render_keyword_ideas_generation, render_seo_generation, render_seo_results, render_history, render_serp_results, render_serp_related_searches, render_serp_chain_to_ads, render_serp_chained_ads_results, render_keyword_candidate_selector, render_ads_keyword_serp_handoff, render_chained_serp_results, render_bidirectional_chain_buttons, render_serp_math_report, render_crawl_math_report, render_generation_quality_report, render_generated_text_math_report, render_google_trends_results, render_serp_domain_metrics
-# Private Helpers: _build_history_signature, format_source_label, build_history_metadata, _display_results_df, build_keyword_ideas_display_df, build_keyword_idea_seed_key, set_keyword_idea_seed_selection, get_selected_keyword_idea_seed_keywords, limit_keyword_idea_seed_keywords, _display_history_entry, build_history_entry_title, _build_history_checkpoint, restore_history_checkpoint, build_keyword_ideas_signature, merge_keyword_ideas_into_processed_data, deduplicate_processed_data, append_manual_keyword, build_keyword_selection_signature, _clear_keyword_ideas_state, _get_use_url_seed_flags, _save_to_history, _is_ads_keyword_results_df, _store_ads_keyword_candidates, _get_selected_ads_keyword_candidates, _run_serp_after_ads_keywords, _run_chained_serp_keywords, _render_gen_math_aggregate, _render_gen_math_row_summary, _render_gen_math_intent
-# Key Semantic Blocks: block_results_display_data_table, block_results_selection_checkboxes, block_results_ideas_planner, block_results_seo_generation, block_results_history_entries, block_results_keyword_handoff_select, block_results_bidirectional_chain, block_results_trends_stage_integration, block_results_math_report_render, block_results_crawl_report_render, block_results_regenerate_quality_feedback, block_results_post_ads_serp_handoff, block_results_gen_text_math_report
-# Critical Flows: pipeline execution -> results display -> keyword selection -> ideas generation -> SEO generation/Trends/SERP/Ads -> generated text math analysis -> history save; SERP/crawl results -> math profile -> math report rendering; generated text -> quality scoring -> quality report
+# Public Functions: render_keyword_results, render_scraping_preview, render_keyword_selection, render_keyword_ideas_generation, render_seo_generation, render_seo_results, render_history, render_serp_results, render_serp_related_searches, render_serp_chain_to_ads, render_serp_chained_ads_results, render_keyword_candidate_selector, render_ads_keyword_serp_handoff, render_chained_serp_results, render_bidirectional_chain_buttons, render_serp_math_report, render_crawl_math_report, render_generation_quality_report, render_generated_text_math_report, render_google_trends_results, render_serp_domain_metrics, render_statistics_dashboard
+# Private Helpers: _build_history_signature, format_source_label, build_history_metadata, _display_results_df, build_keyword_ideas_display_df, build_keyword_idea_seed_key, set_keyword_idea_seed_selection, get_selected_keyword_idea_seed_keywords, limit_keyword_idea_seed_keywords, _display_history_entry, build_history_entry_title, _build_history_checkpoint, restore_history_checkpoint, build_keyword_ideas_signature, merge_keyword_ideas_into_processed_data, deduplicate_processed_data, append_manual_keyword, build_keyword_selection_signature, _clear_keyword_ideas_state, _get_use_url_seed_flags, _save_to_history, _is_ads_keyword_results_df, _store_ads_keyword_candidates, _get_selected_ads_keyword_candidates, _run_serp_after_ads_keywords, _run_chained_serp_keywords, _render_gen_math_aggregate, _render_gen_math_row_summary, _render_gen_math_intent, _render_insight_lines, _weekday_axis_labels
+# Key Semantic Blocks: block_results_display_data_table, block_results_selection_checkboxes, block_results_ideas_planner, block_results_seo_generation, block_results_history_entries, block_results_keyword_handoff_select, block_results_bidirectional_chain, block_results_trends_stage_integration, block_results_math_report_render, block_results_crawl_report_render, block_results_regenerate_quality_feedback, block_results_post_ads_serp_handoff, block_results_gen_text_math_report, block_results_statistics_dashboard_render
+# Critical Flows: pipeline execution -> results display -> keyword selection -> ideas generation -> SEO generation/Trends/SERP/Ads -> generated text math analysis -> history save; SERP/crawl results -> math profile -> math report rendering; generated text -> quality scoring -> quality report; analytics events -> load_events/build_statistics_summary -> statistics dashboard render
 # Verification: python -m py_compile, python -m ruff check ., python -m pytest -q
-# CHANGE_SUMMARY: Restored top-of-file module contract metadata; added reusable keyword candidate selector and bidirectional chain buttons for staged workflows; Phase 8 Task 6: added SERP math report rendering; Phase 8 Task 7: added generation quality report rendering; Phase 8 Plan 03: added crawl math report rendering and keyword handoff controls; Phase 10 Task 9: added Trends-as-stage buttons after keyword-producing steps; Bug fix: updated the function-contract block for _scroll_to_top_markup to reference st.html() instead of st.markdown (script execution in st.html enables the scroll-to-top button to appear); Bug fix: inject markup via st.html(..., unsafe_allow_javascript=True) so the scroll-to-top script executes and the button becomes visible; Bug fix: target Streamlit 1.58's real scroll container (section[data-testid="stMain"]) for both the visibility poll and the click handler — the 1s fallback previously queried .main/stAppViewContainer (not scrollable) and flickered .is-visible off; bind the click via addEventListener (st.html strips inline onclick), so clicking the button actually scrolls to the top.
+# CHANGE_SUMMARY: Restored top-of-file module contract metadata; added reusable keyword candidate selector and bidirectional chain buttons for staged workflows; Phase 8 Task 6: added SERP math report rendering; Phase 8 Task 7: added generation quality report rendering; Phase 8 Plan 03: added crawl math report rendering and keyword handoff controls; Phase 10 Task 9: added Trends-as-stage buttons after keyword-producing steps; Bug fix: updated the function-contract block for _scroll_to_top_markup to reference st.html() instead of st.markdown (script execution in st.html enables the scroll-to-top button to appear); Bug fix: inject markup via st.html(..., unsafe_allow_javascript=True) so the scroll-to-top script executes and the button becomes visible; Bug fix: target Streamlit 1.58's real scroll container (section[data-testid="stMain"]) for both the visibility poll and the click handler — the 1s fallback previously queried .main/stAppViewContainer (not scrollable) and flickered .is-visible off; bind the click via addEventListener (st.html strips inline onclick), so clicking the button actually scrolls to the top. statistics-workflow Task 3: added render_statistics_dashboard() shell (empty-state info + overview metrics + localized Overview/Time/Providers/Tokens/Patterns/Events tabs) wired to utils.analytics.load_events/build_statistics_summary; Task 7 deepens the rich tables/heatmap. statistics-workflow Task 7: deepened render_statistics_dashboard() into 7 localized tabs (added Insights), styled 7x24 weekday-x-hour heatmap pivot (pandas Styler, Blues gradient), localized provider table (statistics_col_* headers + rounded latency), workflow funnel view (localized stage labels), canonical-key token totals (prompt_tokens/completion_tokens/total_tokens — fixed stale-key bug), repeated workflow-combo table + signature-count metric cards, and localized insight caption lines via _render_insight_lines() through insight_* templates (weekday int -> localized name); added _render_insight_lines + _weekday_axis_labels helpers.
 
 import hashlib
+import html
 import io
 import json
 import re
@@ -47,6 +48,13 @@ from utils.pipeline import (
     get_selected_keyword_candidates as _pipeline_get_selected_keyword_candidates,
 )
 from utils.seo_math_analysis import DomainMetrics
+from utils.analytics import (
+    build_statistics_export_sheets,
+    build_statistics_summary,
+    clear_analytics_store,
+    load_events,
+    load_history_analytics_events,
+)
 
 _BASE_DIR = Path(__file__).parent.parent
 _BM25F_DISPLAY_COLUMN_KEYS = {
@@ -3743,6 +3751,7 @@ def render_serp_math_report(
         ads_df=st.session_state.get("serp_chained_ads_data"),
     )
     profile = reverse_report["serp_profile"]
+    st.session_state.serp_math_profile = profile
 
     # Show info message if disabled or no data
     if profile.get("info_message"):
@@ -4634,3 +4643,476 @@ def _render_gen_math_intent(intent) -> None:
 
     if signals:
         st.caption(f"{t('seo_math_intent_matched_signals')}: {', '.join(signals[:15])}")
+
+
+# FUNCTION_CONTRACT: render_statistics_dashboard
+# Purpose: Render the statistics dashboard from the local analytics event store — overview metric cards
+#          plus seven localized tabs (Overview, Time, Providers, Tokens, Patterns, Events, Insights):
+#          a styled 7x24 weekday-x-hour heatmap pivot, a localized provider table, the workflow funnel,
+#          canonical-key token totals, repeated workflow combos, the raw event list, and localized insight
+#          caption lines rendered through insight_* templates (never hardcoded prose).
+#          PHASE-20 / STEP-2001: also renders a diagnostics provenance line (event count, file basename,
+#          unknown-token count, hidden-fixture count), a provider provenance notice (raw IDs verbatim),
+#          a show-fixture-events toggle (local-only recompute), and a confirmation-guarded clear-store
+#          action that wipes the local analytics file.
+# Input: None (reads events via utils.analytics.load_events at call time)
+# Output: None
+# Side Effects: Renders Streamlit widgets (subheader, metric cards, tabs, dataframes, captions, checkboxes,
+#               buttons). Reads the analytics JSON store via load_events/build_statistics_summary. The
+#               clear-store action (only when confirmation checkbox + button both True) calls
+#               clear_analytics_store() which atomically wipes the events file, then st.rerun().
+# Business Rules: With zero events it renders an st.info empty-state message (statistics_empty_message) and
+#                 returns after the diagnostics line. Every tab renders the empty-state when its block is
+#                 sparse. Provider IDs are raw recorded values (never translated to friendly labels). The
+#                 show-fixture toggle recomputes summaries with hide_fixture_events=False (local-only; does
+#                 not change settings.yaml). Task 7 deepened the shell: 7 tabs incl. Insights, styled
+#                 heatmap Styler, localized provider/funnel/combo tables, and localized insight captions.
+# Failure Modes: load_events/build_statistics_summary never raise; the dashboard mirrors that and renders
+#                the empty-state for any sparse/empty data shape. The clear-store action is wrapped in
+#                try/except so it can never break the dashboard.
+# LINKS: knowledge-graph.xml#MOD-001, knowledge-graph.xml#MOD-033, PLAN 19 Task 7, PHASE-20 STEP-2001, verification-plan.xml#V-19-STATISTICS-DASHBOARD, verification-plan.xml#V-20-ANALYTICS-TEST-ISOLATION
+# FUNCTION_CONTRACT: _render_insight_lines
+# Purpose: Render statistics insight tuples as localized caption lines.
+# Input: insights (list[tuple[str, dict]]) — (template_key, params) pairs from _build_insights
+# Output: None
+# Side Effects: Renders one st.caption per insight.
+# Business Rules: Translates a weekday int (0-6) to its localized name when present, then formats the
+#                 insight_* template through t(). No hardcoded English prose; non-tuple entries skipped.
+# Failure Modes: never raises; malformed entries are skipped.
+# LINKS: knowledge-graph.xml#MOD-001, knowledge-graph.xml#MOD-033, PLAN 19 Task 7
+def _render_insight_lines(insights: list) -> None:
+    """Map each (template_key, params) insight tuple to a LOCALIZED caption line.
+
+    Translates a weekday int (0-6) to its localized name when present, then formats the
+    insight_* template through t(). Renders each as an st.caption. No hardcoded English prose.
+    """
+    lines = []
+    for entry in insights or []:
+        if not isinstance(entry, tuple) or len(entry) != 2:
+            continue
+        template_key, params = entry
+        if not isinstance(params, dict):
+            params = {}
+        # Localize weekday int -> name for heatmap/peak-time insights.
+        if "weekday" in params and isinstance(params["weekday"], int):
+            weekday_name = t(f"statistics_weekday_{params['weekday']}")
+            params = {**params, "weekday": weekday_name}
+        text = t(template_key).format(**params)
+        lines.append(f"- **{text}**")
+    if lines:
+        st.markdown("### " + t("statistics_insights_tab"))
+        st.markdown("\n".join(lines))
+
+
+# FUNCTION_CONTRACT: _weekday_axis_labels
+# Purpose: Return the localized weekday axis labels for the activity heatmap.
+# Input: (none)
+# Output: list[str] — 7 labels (Mon..Sun) in weekday() order 0-6
+# Side Effects: none (reads i18n via t())
+# Business Rules: indexes statistics_weekday_0..6 in weekday() order.
+# Failure Modes: never raises.
+# LINKS: knowledge-graph.xml#MOD-001, knowledge-graph.xml#MOD-033, PLAN 19 Task 7
+def _weekday_axis_labels() -> list:
+    """Return the 7 localized weekday axis labels (Mon..Sun) in weekday() order 0-6."""
+    return [t(f"statistics_weekday_{w}") for w in range(7)]
+
+
+def _render_heatmap_html(pivot: pd.DataFrame) -> None:
+    max_count = int(pivot.to_numpy().max()) if not pivot.empty else 0
+    rows = []
+    for weekday, row in pivot.iterrows():
+        cells = [f"<th>{html.escape(str(weekday))}</th>"]
+        for value in row.tolist():
+            count = int(value)
+            alpha = 0.08 + (0.72 * count / max_count) if max_count else 0.08
+            cells.append(
+                '<td title="{count}" style="background:rgba(37,99,235,{alpha:.3f});">'
+                "{count}</td>".format(count=count, alpha=alpha)
+            )
+        rows.append("<tr>" + "".join(cells) + "</tr>")
+
+    header = "".join(f"<th>{hour}</th>" for hour in pivot.columns)
+    st.markdown(
+        """
+<style>
+.statistics-heatmap-table{width:100%;table-layout:fixed;border-collapse:collapse;}
+.statistics-heatmap-table th,.statistics-heatmap-table td{padding:2px 3px;text-align:center;font-size:11px;line-height:1.1;border:1px solid rgba(148,163,184,.35);white-space:nowrap;}
+.statistics-heatmap-table th:first-child{width:64px;text-align:left;}
+.statistics-heatmap-table td{width:3.6%;height:20px;}
+</style>
+<table class="statistics-heatmap-table"><thead><tr><th></th>"""
+        + header
+        + "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_statistics_dashboard() -> None:
+    events = load_events()
+    history_events = load_history_analytics_events()
+    summary_events = events + history_events
+
+    # PHASE-20 / STEP-2001: show-fixture toggle — when checked, recompute summaries with
+    # hide_fixture_events=False so test/manual-run fixture events appear in the views (local-only;
+    # does NOT change settings.yaml). Default unchecked.
+    show_fixtures = st.checkbox(t("statistics_show_fixture_events"), value=False)
+    if show_fixtures:
+        summary = build_statistics_summary(
+            summary_events, config={"analytics": {"hide_fixture_events": False}}
+        )
+    else:
+        summary = build_statistics_summary(summary_events)
+
+    _render_section_header(
+        t("statistics_overview_title"),
+        t("analytics_section_title"),
+        "blue",
+    )
+
+    # PHASE-20 / STEP-2001: diagnostics provenance line — local event count, file basename,
+    # unknown-token count, hidden-fixture count. Describes the store total regardless of the toggle.
+    diag = summary.get("diagnostics", {}) or {}
+    try:
+        st.info(
+            t("statistics_diagnostics_line").format(
+                event_count=diag.get("event_count", 0),
+                file=diag.get("analytics_file", ""),
+                unknown=diag.get("unknown_token_calls", 0),
+                hidden=diag.get("hidden_fixture_events", 0),
+            )
+        )
+    except Exception:
+        pass
+
+    if not summary_events:
+        st.info(t("statistics_empty_message"))
+        return
+
+    # Task 8: CSV export buttons for each aggregate table. Reachable from the top of the
+    # dashboard (non-empty path). One download_button per sheet, each with a localized label.
+    export_sheets = build_statistics_export_sheets(summary)
+    export_labels = {
+        "providers": t("statistics_export_providers"),
+        "funnel": t("statistics_export_funnel"),
+        "heatmap": t("statistics_export_heatmap"),
+        "tokens": t("statistics_export_tokens"),
+        "processed": t("statistics_export_processed"),
+        "serp_tracking": t("statistics_export_serp_tracking"),
+    }
+    export_cols = st.columns(len(export_sheets))
+    for _ecol, (_sheet_name, _label) in zip(export_cols, export_labels.items()):
+        _frame = export_sheets.get(_sheet_name)
+        try:
+            _csv = _frame.to_csv(index=False) if _frame is not None else ""
+        except Exception:
+            _csv = ""
+        with _ecol:
+            st.download_button(
+                label=_label,
+                data=_csv.encode("utf-8"),
+                file_name=f"statistics_{_sheet_name}.csv",
+                mime="text/csv",
+                key=f"statistics_export_{_sheet_name}",
+            )
+
+    overview = summary.get("overview", {}) or {}
+
+    # Overview metric cards.
+    _render_metric_row(
+        [
+            {
+                "title": t("statistics_metric_total_runs"),
+                "content": f"{overview.get('total_runs', 0):,}",
+                "description": t("statistics_metric_success_rate"),
+                "key": "statistics_metric_total_runs_card",
+            },
+            {
+                "title": t("statistics_metric_total_llm_calls"),
+                "content": f"{overview.get('total_llm_calls', 0):,}",
+                "description": t("statistics_metric_total_tokens"),
+                "key": "statistics_metric_total_llm_calls_card",
+            },
+            {
+                "title": t("statistics_metric_total_urls"),
+                "content": f"{overview.get('total_urls', 0):,}",
+                "description": t("statistics_metric_total_keywords"),
+                "key": "statistics_metric_total_urls_card",
+            },
+        ]
+    )
+
+    (tab_overview, tab_time, tab_providers, tab_tokens,
+     tab_patterns, tab_events, tab_insights, tab_processed, tab_serp_tracking) = st.tabs(
+        [
+            t("statistics_overview_title"),
+            t("statistics_time_tab"),
+            t("statistics_providers_tab"),
+            t("statistics_tokens_tab"),
+            t("statistics_patterns_tab"),
+            t("statistics_events_tab"),
+            t("statistics_insights_tab"),
+            t("statistics_processed_tab"),
+            t("statistics_serp_tracking_tab"),
+        ]
+    )
+
+    with tab_overview:
+        overview_rows = [
+            {
+                t("statistics_metric_total_runs"): overview.get("total_runs", 0),
+                t("statistics_metric_success_rate"): overview.get("success_rate", 0.0),
+                t("statistics_metric_workflows"): overview.get("workflows_used", 0),
+                t("statistics_metric_cache_hit_rate"): overview.get("cache_hit_rate", 0.0),
+                t("statistics_metric_total_rows"): overview.get("total_rows", 0),
+                t("statistics_metric_total_tokens"): overview.get("total_tokens", 0),
+            }
+        ]
+        st.dataframe(pd.DataFrame(overview_rows), use_container_width=True, hide_index=True)
+
+        # Workflow funnel view inside Overview.
+        funnel = summary.get("workflow_funnel", []) or []
+        if funnel:
+            st.subheader(t("statistics_funnel_title"))
+            funnel_rows = [
+                {
+                    t("statistics_col_stage"): t(f"statistics_funnel_stage_{row.get('stage', '')}"),
+                    t("statistics_col_count"): row.get("count", 0),
+                }
+                for row in funnel
+            ]
+            st.dataframe(
+                pd.DataFrame(funnel_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with tab_time:
+        heatmap = summary.get("time_heatmap", []) or []
+        if heatmap:
+            st.subheader(t("statistics_heatmap_title"))
+            pivot = (
+                pd.DataFrame(heatmap)
+                .pivot(index="weekday", columns="hour", values="count")
+                .reindex(index=range(7), columns=range(24))
+                .fillna(0)
+                .astype(int)
+            )
+            pivot.index = _weekday_axis_labels()
+            pivot.columns = [str(h) for h in range(24)]
+            _render_heatmap_html(pivot)
+        else:
+            st.info(t("statistics_empty_message"))
+
+    with tab_providers:
+        providers = summary.get("provider_summary", []) or []
+        # PHASE-20 / STEP-2001: provenance notice — provider IDs are raw recorded values, shown
+        # verbatim (not translated to friendly labels). Render the RESOLVED localized string so
+        # the notice text (not the key) appears in the UI.
+        st.caption(t("statistics_provenance_notice"))
+        if providers:
+            provider_rows = [
+                {
+                    t("statistics_col_provider"): p.get("provider", ""),
+                    t("statistics_col_model"): p.get("model", ""),
+                    t("statistics_col_calls"): p.get("calls", 0),
+                    t("statistics_col_success"): p.get("success", 0),
+                    t("statistics_col_errors"): p.get("errors", 0),
+                    t("statistics_col_tokens"): p.get("total_tokens", 0),
+                    t("statistics_col_latency"): round(p.get("avg_latency_ms", 0)),
+                }
+                for p in providers
+            ]
+            st.dataframe(
+                pd.DataFrame(provider_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info(t("statistics_provider_empty_message"))
+
+    with tab_tokens:
+        token_summary = summary.get("token_summary", {}) or {}
+        prompt_tokens = token_summary.get("prompt_tokens", 0)
+        completion_tokens = token_summary.get("completion_tokens", 0)
+        total_tokens = token_summary.get("total_tokens", 0)
+        if total_tokens or prompt_tokens or completion_tokens:
+            token_rows = [
+                {
+                    t("statistics_metric_prompt_tokens"): prompt_tokens,
+                    t("statistics_metric_completion_tokens"): completion_tokens,
+                    t("statistics_metric_total_tokens"): total_tokens,
+                }
+            ]
+            st.dataframe(pd.DataFrame(token_rows), use_container_width=True, hide_index=True)
+        elif token_summary.get("llm_call_count", 0) and token_summary.get("unknown_token_calls", 0):
+            st.info(t("statistics_tokens_unknown_message"))
+        else:
+            st.info(t("statistics_tokens_empty_message"))
+
+    with tab_patterns:
+        repeated = summary.get("repeated_patterns", {}) or {}
+        workflow_combos = repeated.get("workflow_combos", []) or []
+        input_sigs = repeated.get("input_signatures", []) or []
+        keywords = repeated.get("keywords", []) or []
+        if workflow_combos or input_sigs or keywords:
+            _render_metric_row(
+                [
+                    {
+                        "title": t("statistics_patterns_repeated_inputs"),
+                        "content": f"{len(input_sigs):,}",
+                        "description": t("statistics_patterns_repeated_inputs"),
+                        "key": "statistics_patterns_inputs_card",
+                    },
+                    {
+                        "title": t("statistics_patterns_repeated_keywords"),
+                        "content": f"{len(keywords):,}",
+                        "description": t("statistics_patterns_repeated_keywords"),
+                        "key": "statistics_patterns_keywords_card",
+                    },
+                ]
+            )
+            if workflow_combos:
+                combo_rows = [
+                    {
+                        t("statistics_col_workflow"): c.get("workflow_mode", ""),
+                        t("statistics_col_provider"): c.get("provider", ""),
+                        t("statistics_col_model"): c.get("model", ""),
+                        t("statistics_col_count"): c.get("count", 0),
+                    }
+                    for c in workflow_combos
+                ]
+                st.dataframe(
+                    pd.DataFrame(combo_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            st.info(t("statistics_empty_message"))
+
+    with tab_events:
+        event_rows = [
+            {
+                "event_type": e.get("event_type", ""),
+                "workflow_mode": e.get("workflow_mode", ""),
+                "provider": e.get("provider", ""),
+                "status": e.get("status", ""),
+                "created_at": e.get("created_at", ""),
+            }
+            for e in summary_events
+            if isinstance(e, dict)
+        ]
+        if event_rows:
+            st.dataframe(pd.DataFrame(event_rows), use_container_width=True, hide_index=True)
+        else:
+            st.info(t("statistics_empty_message"))
+
+    with tab_insights:
+        insights = summary.get("insights", []) or []
+        if insights:
+            _render_insight_lines(insights)
+        else:
+            st.info(t("statistics_empty_message"))
+
+    # PHASE-20 / STEP-2002: Processed tab — top queries/websites/URLs aggregated from the
+    # processed_dimensions events. Each dimension renders as its own dataframe; empty when no
+    # processed_dimensions events were recorded.
+    with tab_processed:
+        processed = summary.get("processed_summary", {}) or {}
+        top_queries = processed.get("top_queries", []) or []
+        top_websites = processed.get("top_websites", []) or []
+        top_urls = processed.get("top_urls", []) or []
+        if top_queries or top_websites or top_urls:
+            for section_label, section_title, rows in (
+                (top_queries, t("statistics_processed_top_queries"), None),
+                (top_websites, t("statistics_processed_top_websites"), None),
+                (top_urls, t("statistics_processed_top_urls"), None),
+            ):
+                if not section_label:
+                    continue
+                st.subheader(section_title)
+                rows = [
+                    {
+                        t("statistics_col_value"): item.get("value", ""),
+                        t("statistics_col_count"): item.get("count", 0),
+                        t("statistics_col_workflows"): ", ".join(item.get("workflows", []) or []),
+                    }
+                    for item in section_label
+                ]
+                st.dataframe(
+                    pd.DataFrame(rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            st.info(t("statistics_processed_empty_message"))
+
+    with tab_serp_tracking:
+        tracking = summary.get("serp_tracking", {}) or {}
+        sections = [
+            (
+                tracking.get("top_websites", []) or [],
+                t("statistics_serp_top_websites"),
+                [
+                    ("domain", t("statistics_col_provider")),
+                    ("count", t("statistics_col_count")),
+                    ("avg_position", t("statistics_col_avg_position")),
+                ],
+            ),
+            (
+                tracking.get("tracked_queries", []) or [],
+                t("statistics_serp_tracked_queries"),
+                [
+                    ("query", t("statistics_col_value")),
+                    ("result_count", t("statistics_col_count")),
+                    ("avg_position", t("statistics_col_avg_position")),
+                ],
+            ),
+            (
+                tracking.get("top_keywords", []) or [],
+                t("statistics_serp_top_keywords"),
+                [
+                    ("term", t("statistics_col_value")),
+                    ("count", t("statistics_col_count")),
+                ],
+            ),
+            (
+                tracking.get("top_results", []) or [],
+                t("statistics_serp_top_results"),
+                [
+                    ("domain", t("statistics_col_provider")),
+                    ("canonical_url", "URL"),
+                    ("position", t("statistics_col_position")),
+                    ("query", t("statistics_col_value")),
+                    ("title", t("statistics_col_title")),
+                ],
+            ),
+        ]
+        rendered = False
+        for rows, title, columns in sections:
+            if not rows:
+                continue
+            st.subheader(title)
+            rendered = True
+            table_rows = [
+                {label: row.get(key, "") for key, label in columns}
+                for row in rows
+                if isinstance(row, dict)
+            ]
+            st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+        if not rendered:
+            st.info(t("statistics_empty_message"))
+
+    # PHASE-20 / STEP-2001: clear local analytics store — guarded by a confirmation checkbox AND a
+    # button click. Only acts when both are True; never raises so the dashboard cannot break.
+    # clear_analytics_store() itself re-checks analytics.enabled and no-ops when disabled.
+    confirm = st.checkbox(t("statistics_clear_store_confirm"), value=False)
+    if st.button(t("statistics_clear_store_button")):
+        if confirm:
+            try:
+                if clear_analytics_store():
+                    st.success(t("statistics_clear_store_done"))
+                    st.rerun()
+            except Exception:
+                pass

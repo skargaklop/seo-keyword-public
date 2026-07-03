@@ -143,6 +143,60 @@ def test_render_input_form_does_not_pass_index_when_widget_state_exists(
     assert "index" not in captured["kwargs"]
 
 
+def test_render_input_form_statistics_mode_hides_url_input_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    st.session_state.clear()
+    app._ensure_session_defaults()
+    st.session_state.workflow_mode = app.WORKFLOW_MODE_STATISTICS
+    calls = {"form": 0, "subheader": [], "text_area": 0, "file_uploader": 0, "submit": 0}
+
+    monkeypatch.setattr("app.st.columns", lambda spec: (_DummyContext(), _DummyContext()))
+    monkeypatch.setattr("app.st.container", lambda *args, **kwargs: _DummyContext())
+    monkeypatch.setattr("app._render_section_header", lambda *args, **kwargs: None)
+
+    def _fake_selectbox(label, options, **kwargs):
+        return app.WORKFLOW_MODE_STATISTICS
+
+    def _forbidden_form(*args, **kwargs):
+        calls["form"] += 1
+        return _TrackedForm({})
+
+    monkeypatch.setattr("app.st.selectbox", _fake_selectbox)
+    monkeypatch.setattr("app.st.form", _forbidden_form)
+    monkeypatch.setattr(
+        "app.st.subheader", lambda *args, **kwargs: calls["subheader"].append(args[0])
+    )
+    monkeypatch.setattr(
+        "app.st.text_area",
+        lambda *args, **kwargs: calls.__setitem__("text_area", calls["text_area"] + 1),
+    )
+    monkeypatch.setattr(
+        "app.st.file_uploader",
+        lambda *args, **kwargs: calls.__setitem__(
+            "file_uploader", calls["file_uploader"] + 1
+        ),
+    )
+    monkeypatch.setattr(
+        "app.st.form_submit_button",
+        lambda *args, **kwargs: calls.__setitem__("submit", calls["submit"] + 1),
+    )
+
+    selected_mode, manual_input, uploaded_file, submitted = app._render_input_form()
+
+    assert selected_mode == app.WORKFLOW_MODE_STATISTICS
+    assert manual_input == ""
+    assert uploaded_file is None
+    assert submitted is False
+    assert calls == {
+        "form": 0,
+        "subheader": [],
+        "text_area": 0,
+        "file_uploader": 0,
+        "submit": 0,
+    }
+
+
 def test_main_ignores_immediate_duplicate_form_submission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2746,3 +2800,149 @@ class TestUrlLlmSeoHandoff:
         # GRACE: Only the SEO button "clicks"
     # GRACE: The scraped-content selector must NOT render in the direct-SEO path
             # GRACE: class _FakeLLM declaration
+
+
+# ---------------------------------------------------------------------------
+# Statistics workflow: routing + workflow-mode registration (Task 3)
+# ---------------------------------------------------------------------------
+
+
+def test_workflow_mode_statistics_constant_is_registered() -> None:
+    assert app.WORKFLOW_MODE_STATISTICS == "statistics"
+    assert app.WORKFLOW_MODE_STATISTICS in app.WORKFLOW_MODES
+
+
+def test_workflow_options_includes_statistics_label() -> None:
+    options = app._workflow_options()
+    assert options[app.t("workflow_mode_statistics")] == app.WORKFLOW_MODE_STATISTICS
+
+
+def test_workflow_mode_label_returns_statistics_label() -> None:
+    assert app._workflow_mode_label(app.WORKFLOW_MODE_STATISTICS) == app.t(
+        "workflow_mode_statistics"
+    )
+
+
+def test_main_routes_statistics_mode_to_dashboard_and_skips_result_renderers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    st.session_state.clear()
+
+    monkeypatch.setattr(
+        "app.render_sidebar",
+        lambda: {
+            "provider": "OpenAI",
+            "model_name": "gpt-test",
+            "max_keywords": 10,
+            "location_id": "2840",
+            "language_id": "1000",
+            "currency_code": "USD",
+            "auto_save_excel": False,
+            "keyword_prompt": "",
+            "seo_prompt": "",
+            "api_timeout": 10,
+            "api_delay": 2,
+            "api_retry_count": 4,
+            "api_retry_delay": 4,
+            "upload_max_file_size_mb": 5,
+            "upload_max_rows": 1000,
+        },
+    )
+    monkeypatch.setattr(
+        "app._render_input_form",
+        lambda: (app.WORKFLOW_MODE_STATISTICS, "", None, False),
+    )
+    monkeypatch.setattr("app.run_startup_cleanup", lambda: {})
+    monkeypatch.setattr("app.validate_api_keys", lambda: {"openai": True})
+    monkeypatch.setattr("app.logger.close_handlers", lambda: None)
+    monkeypatch.setattr("app.logger.refresh_config", lambda: None)
+    monkeypatch.setattr("app.logger.info", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.st.title", lambda *a, **kw: None)
+    monkeypatch.setattr("app.st.markdown", lambda *a, **kw: None)
+    monkeypatch.setattr("app.st.html", lambda *a, **kw: None)
+    monkeypatch.setattr("app.st.warning", lambda *a, **kw: None)
+    monkeypatch.setattr("app.st.error", lambda *a, **kw: None)
+
+    dashboard_calls = []
+    monkeypatch.setattr(
+        "app.render_statistics_dashboard",
+        lambda: dashboard_calls.append(True),
+    )
+
+    spy_targets = [
+        "app.render_keyword_results",
+        "app.render_scraping_preview",
+        "app.render_scraped_text_math_report",
+        "app.render_seo_results",
+        "app.render_history",
+        "app.render_seo_generation",
+        "app.render_generated_text_math_report",
+    ]
+    render_calls = {name: [] for name in spy_targets}
+    for name in spy_targets:
+        monkeypatch.setattr(
+            name, lambda *a, _n=name, **kw: render_calls[_n].append(True)
+        )
+
+    app.main()
+
+    assert dashboard_calls == [True], (
+        "render_statistics_dashboard must be called in statistics mode"
+    )
+    for name, calls in render_calls.items():
+        assert not calls, (
+            f"{name} must NOT be called in statistics mode; got {calls}"
+        )
+
+
+def test_statistics_mode_does_not_require_submitted_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Statistics mode must short-circuit on submitted=False (no input form submission)."""
+    st.session_state.clear()
+
+    monkeypatch.setattr(
+        "app.render_sidebar",
+        lambda: {
+            "provider": "OpenAI",
+            "model_name": "gpt-test",
+            "max_keywords": 10,
+            "location_id": "2840",
+            "language_id": "1000",
+            "currency_code": "USD",
+            "auto_save_excel": False,
+            "keyword_prompt": "",
+            "seo_prompt": "",
+            "api_timeout": 10,
+            "api_delay": 2,
+            "api_retry_count": 4,
+            "api_retry_delay": 4,
+            "upload_max_file_size_mb": 5,
+            "upload_max_rows": 1000,
+        },
+    )
+    # submitted=False, manual_input="" — statistics dashboard must still render.
+    monkeypatch.setattr(
+        "app._render_input_form",
+        lambda: (app.WORKFLOW_MODE_STATISTICS, "", None, False),
+    )
+    monkeypatch.setattr("app.run_startup_cleanup", lambda: {})
+    monkeypatch.setattr("app.validate_api_keys", lambda: {"openai": True})
+    monkeypatch.setattr("app.logger.close_handlers", lambda: None)
+    monkeypatch.setattr("app.logger.refresh_config", lambda: None)
+    monkeypatch.setattr("app.logger.info", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.st.title", lambda *a, **kw: None)
+    monkeypatch.setattr("app.st.markdown", lambda *a, **kw: None)
+    monkeypatch.setattr("app.st.html", lambda *a, **kw: None)
+    monkeypatch.setattr("app.st.warning", lambda *a, **kw: None)
+    monkeypatch.setattr("app.st.error", lambda *a, **kw: None)
+
+    dashboard_calls = []
+    monkeypatch.setattr(
+        "app.render_statistics_dashboard",
+        lambda: dashboard_calls.append(True),
+    )
+
+    app.main()
+
+    assert dashboard_calls == [True]

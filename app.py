@@ -1,16 +1,16 @@
 # MODULE_CONTRACT: app
-# Purpose: Main Streamlit entrypoint, session state management, workflow routing with keyword-gated SERP, crawl reports, and Trends-as-stage integration
-# Rationale: Central coordinator for workflow modes (URL→LLM→Ads, URL→Ads, Keyword→Ads, SERP, Crawl, Trends) with SERP/Ads/Trends chaining
+# Purpose: Main Streamlit entrypoint, session state management, workflow routing with keyword-gated SERP, crawl reports, Trends-as-stage integration, and statistics dashboard
+# Rationale: Central coordinator for workflow modes (URL→LLM→Ads, URL→Ads, Keyword→Ads, SERP, Crawl, Trends, Statistics) with SERP/Ads/Trends chaining
 # Dependencies: streamlit, components.*, utils.pipeline, config.settings
 # Exports: main(), _ensure_session_defaults(), _reset_run_state(), _render_input_form()
 # LINKS: requirements.xml#UC-001, requirements.xml#UC-002, requirements.xml#UC-003, development-plan.xml#MOD-001, PLAN 08-01, PLAN 10-02 Task 9
 # MODULE_MAP: app
 # Public Functions: main(), _ensure_session_defaults(), _reset_run_state(), _render_input_form()
 # Private Helpers: _normalize_entries(), _build_submission_signature(), _workflow_options(), _workflow_mode_label(), _sync_workflow_mode_from_widget()
-# Key Semantic Blocks: block_workflow_route_mode_select, block_workflow_keyword_gate, block_workflow_chain_order_route, block_workflow_crawl_report_route, block_workflow_trends_stage_integration
+# Key Semantic Blocks: block_workflow_route_mode_select, block_workflow_keyword_gate, block_workflow_chain_order_route, block_workflow_crawl_report_route, block_workflow_trends_stage_integration, block_workflow_statistics_dashboard_route
 # Critical Flows: User Input -> Keyword/Crawl Extraction -> Checkbox Selection -> SERP/Ads/Trends/SEO -> Export
 # Verification: verification-plan.xml#V-001, verification-plan.xml#V-003
-# CHANGE_SUMMARY: Added keyword-gated SERP workflows; SERP pre-step disabled for URL modes until keyword extraction; staged LLM extraction for SERP/Ads chaining; Phase 8 Plan 03: added crawl/report workflow routing; Phase 9 review fix: initial SERP pre-step is visible only for keyword-seed mode; Phase 10 Task 9: added Trends-as-stage buttons after keyword-producing steps.
+# CHANGE_SUMMARY: Added keyword-gated SERP workflows; SERP pre-step disabled for URL modes until keyword extraction; staged LLM extraction for SERP/Ads chaining; Phase 8 Plan 03: added crawl/report workflow routing; Phase 9 review fix: initial SERP pre-step is visible only for keyword-seed mode; Phase 10 Task 9: added Trends-as-stage buttons after keyword-producing steps. statistics-workflow Task 3: registered WORKFLOW_MODE_STATISTICS in WORKFLOW_MODES, _workflow_options, _workflow_mode_label, _render_step_strip, and added the no-input short-circuit in main() that renders render_statistics_dashboard() before any workflow execution or result renderer. statistics-workflow Task 4: instrumented stable workflow boundaries in main() with privacy-safe record_workflow_event() — workflow_submitted (after normalized_inputs), workflow_completed (end of successful dispatch), workflow_failed (existing FileParsingError path); session-state set + deterministic event_id double-guards against Streamlit-rerun duplicates.
 
 import html
 from datetime import datetime
@@ -32,6 +32,7 @@ from components.results import (
     render_seo_generation,
     render_seo_results,
     render_serp_chain_to_ads,
+    render_statistics_dashboard,
     render_serp_chained_ads_results,
     render_merged_ads_serp_results,
     render_merged_ads_trends_results,
@@ -47,6 +48,11 @@ from streamlit_shadcn_ui import metric_card
 from utils.cleanup import run_startup_cleanup
 from utils.file_handler import FileHandler, FileParsingError
 from utils.logger import APP_LOG, logger
+from utils.analytics import (
+    record_processed_dimensions_event,
+    record_serp_math_snapshot_event,
+    record_workflow_event,
+)
 from utils.pipeline import (
     prepare_seo_context_from_selection,
     prepare_urls_for_seo,
@@ -535,6 +541,13 @@ def _render_step_strip(selected_mode: str) -> None:
             ("3", "stage_trends_analysis_title", "stage_trends_analysis_desc", "amber"),
             ("4", "app_stage_4_title", "stage_export_desc", "blue"),
         )
+    elif selected_mode == WORKFLOW_MODE_STATISTICS:
+        # Statistics is a no-input read-only dashboard; reuse the shared export step so the
+        # strip still renders consistently without implying an input stage.
+        step_specs = (
+            ("1", "statistics_overview_title", "analytics_section_title", "blue"),
+            ("4", "app_stage_4_title", "stage_export_desc", "blue"),
+        )
     else:
         # Fallback to the legacy shared set for any unknown mode.
         step_specs = (
@@ -607,6 +620,7 @@ WORKFLOW_MODE_KEYWORD_LLM = "keyword_llm"
 WORKFLOW_MODE_SERP_ANALYSIS = "serp_analysis"
 WORKFLOW_MODE_CRAWL_REPORT = "crawl_report"
 WORKFLOW_MODE_TRENDS = "google_trends"
+WORKFLOW_MODE_STATISTICS = "statistics"
 WORKFLOW_MODES = (
     WORKFLOW_MODE_URL_LLM,
     WORKFLOW_MODE_URL_SEED,
@@ -615,6 +629,7 @@ WORKFLOW_MODES = (
     WORKFLOW_MODE_SERP_ANALYSIS,
     WORKFLOW_MODE_CRAWL_REPORT,
     WORKFLOW_MODE_TRENDS,
+    WORKFLOW_MODE_STATISTICS,
 )
 WORKFLOW_MODE_WIDGET_KEY = "workflow_mode_widget"
 DYNAMIC_STATE_PREFIXES = (
@@ -833,6 +848,7 @@ def _workflow_options() -> Dict[str, str]:
         t("serp_mode_label"): WORKFLOW_MODE_SERP_ANALYSIS,
         t("crawl_mode_label"): WORKFLOW_MODE_CRAWL_REPORT,
         t("workflow_mode_trends"): WORKFLOW_MODE_TRENDS,
+        t("workflow_mode_statistics"): WORKFLOW_MODE_STATISTICS,
     }
 
 
@@ -855,6 +871,7 @@ def _workflow_mode_label(mode: str) -> str:
         WORKFLOW_MODE_SERP_ANALYSIS: t("serp_mode_label"),
         WORKFLOW_MODE_CRAWL_REPORT: t("crawl_mode_label"),
         WORKFLOW_MODE_TRENDS: t("workflow_mode_trends"),
+        WORKFLOW_MODE_STATISTICS: t("workflow_mode_statistics"),
     }
     return options.get(mode, mode)
 
@@ -913,6 +930,8 @@ def _render_input_form() -> tuple[str, str, Any, bool]:
             **selectbox_kwargs,
         )
         st.session_state.workflow_mode = selected_mode
+        if selected_mode == WORKFLOW_MODE_STATISTICS:
+            return selected_mode, "", None, False
 
         with st.form("analysis_form"):
             if selected_mode == WORKFLOW_MODE_KEYWORD_SEED:
@@ -983,7 +1002,8 @@ def main() -> None:
             "Startup cleanup completed: "
             f"outputs={cleanup_stats['outputs_deleted']}, "
             f"api_logs={cleanup_stats['api_logs_deleted']}, "
-            f"history_entries={cleanup_stats['history_removed']}"
+            f"history_entries={cleanup_stats['history_removed']}, "
+            f"analytics_trimmed={cleanup_stats['analytics_trimmed']}"
         )
 
     if "api_keys_status" not in st.session_state:
@@ -1065,6 +1085,12 @@ def main() -> None:
 
     selected_mode, manual_input, uploaded_file, submitted = _render_input_form()
 
+    # Statistics is a no-input read-only dashboard: render it and short-circuit before any
+    # workflow execution or result rendering (keyword/SEO/history/scraped-text/math).
+    if selected_mode == WORKFLOW_MODE_STATISTICS:
+        render_statistics_dashboard()
+        return
+
     # SERP pre-step (Path A) is disabled.
     # SERP↔Ads enrichment is handled by the bidirectional Chain buttons (Path B); pre-step path (A) disabled.
     enable_serp_pre_step = False
@@ -1112,11 +1138,38 @@ def main() -> None:
                     )
                 )
             except FileParsingError as exc:
+                # statistics-workflow Task 4: record the failure at this existing user-facing
+                # error boundary. error carries the sanitized message KEY (never raw text).
+                record_workflow_event(
+                    "workflow_failed",
+                    run_id=run_id,
+                    workflow_mode=selected_mode,
+                    provider=provider,
+                    model=model_name,
+                    status="error",
+                    error=str(exc.message_key),
+                )
                 st.error(t(exc.message_key, **exc.message_kwargs))
                 return
 
         normalized_inputs = _normalize_entries(inputs)
         st.session_state.active_inputs = normalized_inputs
+
+        # statistics-workflow Task 4: record workflow_submitted exactly once per run_id.
+        # The session-state set guards against Streamlit reruns recording a duplicate; the
+        # deterministic event_id inside record_workflow_event is the belt-and-suspenders dedup.
+        _submitted_key = f"analytics_submitted:{run_id}"
+        _recorded_events = st.session_state.setdefault("analytics_recorded_events", set())
+        if _submitted_key not in _recorded_events:
+            record_workflow_event(
+                "workflow_submitted",
+                run_id=run_id,
+                workflow_mode=selected_mode,
+                provider=provider,
+                model=model_name,
+                counts={"inputs": len(normalized_inputs)},
+            )
+            _recorded_events.add(_submitted_key)
 
         # SERP pre-step: run SERP analysis before primary workflow (keyword-gated).
         # URL -> LLM always stages extraction first, then lets the user choose SERP or Ads.
@@ -1257,6 +1310,35 @@ def main() -> None:
                     force_refresh=force_refresh,
                 )
 
+        # statistics-workflow Task 4: record workflow_completed (status=success) once per run_id
+        # at this single boundary — all workflow dispatch paths above have returned successfully
+        # (failure paths already returned early with workflow_failed). Guarded by session state so
+        # a Streamlit rerun does not double-record; record_workflow_event's event_id dedup is the
+        # second line of defense. counts reflect inputs; richer per-stage counts come from the
+        # pipeline stage_completed events.
+        _completed_key = f"analytics_completed:{run_id}"
+        _recorded_events = st.session_state.setdefault("analytics_recorded_events", set())
+        if _completed_key not in _recorded_events:
+            record_workflow_event(
+                "workflow_completed",
+                run_id=run_id,
+                workflow_mode=selected_mode,
+                provider=provider,
+                model=model_name,
+                status="success",
+                counts={"inputs": len(normalized_inputs)},
+            )
+            # PHASE-20 / STEP-2002: record processed top queries/websites/URLs from the
+            # run's processed_data stages. Privacy-safe (reduced metrics only: canonical
+            # URL/domain, lowercased query). No-ops when no recognized columns are found.
+            record_processed_dimensions_event(
+                run_id=run_id,
+                workflow_mode=selected_mode,
+                processed_data=st.session_state.get("processed_data") or {},
+                source="workflow_completed",
+            )
+            _recorded_events.add(_completed_key)
+
     workflow_mode = st.session_state.get("workflow_mode", WORKFLOW_MODE_URL_LLM)
 
     if workflow_mode == WORKFLOW_MODE_SERP_ANALYSIS:
@@ -1265,6 +1347,13 @@ def main() -> None:
         render_serp_math_report(
             st.session_state.get("processed_data"),
             st.session_state.get("serp_related_data"),
+        )
+        record_serp_math_snapshot_event(
+            run_id=str(st.session_state.get("current_run_id", "")),
+            workflow_mode=WORKFLOW_MODE_SERP_ANALYSIS,
+            serp_df=st.session_state.get("processed_data"),
+            math_profile=st.session_state.get("serp_math_profile"),
+            config={"seo_math": seo_math_settings},
         )
         render_serp_chain_to_ads(
             location_id=location_id,

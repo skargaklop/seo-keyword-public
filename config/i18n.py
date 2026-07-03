@@ -736,6 +736,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "Режим сценарію",
         "en": "Workflow mode",
     },
+    "workflow_mode_statistics": {
+        "ru": "Статистика",
+        "uk": "Статистика",
+        "en": "Statistics",
+    },
     "workflow_mode_url_llm": {
         "ru": "URL -> LLM -> Ads",
         "uk": "URL -> LLM -> Ads",
@@ -1831,6 +1836,36 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "Лематизує окремі слова (не URL) справжнім морфоаналізатором перед аналізом: pymorphy3 для російської/української, simplemma для решти мов. Зводить форми до однієї леми — «купити», «купив», «куплю» → «купити», що підвищує точність TF-IDF, n-грам, BM25F, спільної зустрічаності та розпізнавання інтенту. Залежності опційні та підвантажуються ліниво: без них налаштування бездіяльне (слова не змінюються). Для ввімкнення виконайте: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
         "en": "Lemmatizes individual words (not URLs) with a real morphological analyzer before analysis: pymorphy3 for Russian/Ukrainian, simplemma for other languages. Collapses word forms to one lemma — «купить», «купил», «куплю» → «купить», improving TF-IDF, n-gram, BM25F, co-occurrence, and intent detection accuracy. Dependencies are optional and lazy-loaded: without them this setting is a no-op (words are left unchanged). To enable, run: pip install pymorphy3 pymorphy3-dicts-uk simplemma.",
     },
+    "seo_math_tracked_websites": {
+        "ru": "Отслеживаемые сайты",
+        "uk": "Відстежувані сайти",
+        "en": "Tracked websites",
+    },
+    "seo_math_tracked_websites_help": {
+        "ru": "По одному домену на строку. Пусто = отслеживать все.",
+        "uk": "По одному домену на рядок. Порожньо = відстежувати все.",
+        "en": "One domain per line. Empty = track all.",
+    },
+    "seo_math_tracked_search_queries": {
+        "ru": "Отслеживаемые поисковые запросы",
+        "uk": "Відстежувані пошукові запити",
+        "en": "Tracked search queries",
+    },
+    "seo_math_tracked_search_queries_help": {
+        "ru": "По одному запросу на строку. Пусто = отслеживать все.",
+        "uk": "По одному запиту на рядок. Порожньо = відстежувати все.",
+        "en": "One query per line. Empty = track all.",
+    },
+    "seo_math_track_serp_math_statistics": {
+        "ru": "Отслеживать статистику SERP-математики",
+        "uk": "Відстежувати статистику SERP-математики",
+        "en": "Track SERP math statistics",
+    },
+    "seo_math_track_serp_math_statistics_help": {
+        "ru": "Записывать агрегированные метрики SERP-математики в локальную аналитику.",
+        "uk": "Записувати агреговані метрики SERP-математики в локальну аналітику.",
+        "en": "Record aggregated SERP math metrics into local analytics.",
+    },
     "lemmatizer_dependency_status_header": {
         "ru": "Статус библиотек лемматизации",
         "uk": "Стан бібліотек лематизації",
@@ -2864,6 +2899,457 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "uk": "📢 Google Ads",
         "en": "Google Ads",
     },
+    # --- Statistics workflow: analytics sidebar controls + dashboard labels (Task 2) ---
+    "analytics_section_title": {
+        "ru": "Статистика использования",
+        "uk": "Статистика використання",
+        "en": "Usage statistics",
+    },
+    "analytics_enabled_label": {
+        "ru": "Собирать статистику использования",
+        "uk": "Збирати статистику використання",
+        "en": "Collect usage statistics",
+    },
+    "analytics_retention_label": {
+        "ru": "Хранить статистику (дней)",
+        "uk": "Зберігати статистику (днів)",
+        "en": "Keep statistics (days)",
+    },
+    "analytics_max_events_label": {
+        "ru": "Максимум хранимых событий",
+        "uk": "Максимум подій, що зберігаються",
+        "en": "Maximum stored events",
+    },
+    "analytics_capture_tokens_label": {
+        "ru": "Собирать использование токенов",
+        "uk": "Збирати використання токенів",
+        "en": "Capture token usage",
+    },
+    "analytics_capture_repeated_terms_label": {
+        "ru": "Собирать повторяющиеся сводки ключевых слов/доменов",
+        "uk": "Збирати повторювані зведення ключових слів/доменів",
+        "en": "Capture repeated keyword/domain summaries",
+    },
+    "statistics_overview_title": {
+        "ru": "Обзор статистики",
+        "uk": "Огляд статистики",
+        "en": "Statistics overview",
+    },
+    "statistics_time_tab": {
+        "ru": "Время",
+        "uk": "Час",
+        "en": "Time",
+    },
+    "statistics_providers_tab": {
+        "ru": "Провайдеры",
+        "uk": "Провайдери",
+        "en": "Providers",
+    },
+    "statistics_tokens_tab": {
+        "ru": "Токены",
+        "uk": "Токени",
+        "en": "Tokens",
+    },
+    "statistics_patterns_tab": {
+        "ru": "Шаблоны",
+        "uk": "Шаблони",
+        "en": "Patterns",
+    },
+    "statistics_events_tab": {
+        "ru": "События",
+        "uk": "Події",
+        "en": "Events",
+    },
+    "statistics_insights_tab": {
+        "ru": "Инсайты",
+        "uk": "Інсайти",
+        "en": "Insights",
+    },
+    "statistics_processed_tab": {
+        "ru": "Обработано",
+        "uk": "Оброблено",
+        "en": "Processed",
+    },
+    "statistics_processed_top_queries": {
+        "ru": "Популярные запросы",
+        "uk": "Популярні запити",
+        "en": "Top queries",
+    },
+    "statistics_processed_top_websites": {
+        "ru": "Популярные сайты",
+        "uk": "Популярні сайти",
+        "en": "Top websites",
+    },
+    "statistics_processed_top_urls": {
+        "ru": "Популярные URL",
+        "uk": "Популярні URL",
+        "en": "Top URLs",
+    },
+    "statistics_col_value": {
+        "ru": "Значение",
+        "uk": "Значення",
+        "en": "Value",
+    },
+    "statistics_col_workflows": {
+        "ru": "Сценарии",
+        "uk": "Сценарії",
+        "en": "Workflows",
+    },
+    "statistics_export_processed": {
+        "ru": "Экспорт: обработанные",
+        "uk": "Експорт: оброблені",
+        "en": "Export: processed",
+    },
+    "statistics_serp_tracking_tab": {
+        "ru": "SERP статистика",
+        "uk": "SERP статистика",
+        "en": "SERP Tracking",
+    },
+    "statistics_serp_top_websites": {
+        "ru": "Топ сайтов из SERP",
+        "uk": "Топ сайтів із SERP",
+        "en": "Top websites from SERP",
+    },
+    "statistics_serp_tracked_queries": {
+        "ru": "Отслеживаемые поисковые запросы",
+        "uk": "Відстежувані пошукові запити",
+        "en": "Tracked search queries",
+    },
+    "statistics_serp_top_keywords": {
+        "ru": "Топ ключевых слов SERP",
+        "uk": "Топ ключових слів SERP",
+        "en": "Top SERP keywords",
+    },
+    "statistics_serp_top_results": {
+        "ru": "Топ результатов SERP",
+        "uk": "Топ результатів SERP",
+        "en": "Top SERP results",
+    },
+    "statistics_export_serp_tracking": {
+        "ru": "Экспорт: SERP статистика",
+        "uk": "Експорт: SERP статистика",
+        "en": "Export: SERP tracking",
+    },
+    "statistics_col_avg_position": {
+        "ru": "Средняя позиция",
+        "uk": "Середня позиція",
+        "en": "Average position",
+    },
+    "statistics_col_position": {
+        "ru": "Позиция",
+        "uk": "Позиція",
+        "en": "Position",
+    },
+    "statistics_col_title": {
+        "ru": "Заголовок",
+        "uk": "Заголовок",
+        "en": "Title",
+    },
+    "statistics_empty_message": {
+        "ru": "Пока нет собранной статистики. Запустите анализ, чтобы увидеть данные.",
+        "uk": "Поки немає зібраної статистики. Запустіть аналіз, щоб побачити дані.",
+        "en": "No statistics collected yet. Run an analysis to see data.",
+    },
+    "statistics_tokens_unknown_message": {
+        "ru": "Есть вызовы LLM, но провайдер не вернул данные о токенах.",
+        "uk": "Є виклики LLM, але провайдер не повернув дані про токени.",
+        "en": "LLM calls were recorded, but the provider did not return token usage.",
+    },
+    "statistics_tokens_empty_message": {
+        "ru": "Токены пока не записаны. Эта вкладка заполняется только для LLM-вызовов, где провайдер вернул usage/tokens.",
+        "uk": "Токени ще не записані. Ця вкладка заповнюється тільки для LLM-викликів, де провайдер повернув usage/tokens.",
+        "en": "No token usage recorded yet. This tab is filled only for LLM calls where the provider returned usage/tokens.",
+    },
+    "statistics_provider_empty_message": {
+        "ru": "Провайдеры пока не записаны. Таблица строится из analytics LLM-вызовов и LLM cache/history записей; старые checkpoint без провайдера не могут восстановить эти данные.",
+        "uk": "Провайдери ще не записані. Таблиця будується з analytics LLM-викликів і LLM cache/history записів; старі checkpoint без провайдера не можуть відновити ці дані.",
+        "en": "No providers recorded yet. This table is built from analytics LLM calls and LLM cache/history records; older checkpoints without provider fields cannot reconstruct it.",
+    },
+    "statistics_processed_empty_message": {
+        "ru": "Нет обработанных запросов, сайтов или URL. Эта вкладка заполняется из processed_data событий и checkpoint processed_data.",
+        "uk": "Немає оброблених запитів, сайтів або URL. Ця вкладка заповнюється з processed_data подій і checkpoint processed_data.",
+        "en": "No processed queries, websites, or URLs yet. This tab is filled from processed_data events and checkpoint processed_data.",
+    },
+    "statistics_diagnostics_line": {
+        "ru": "Локальная аналитика: {event_count} событий в {file} · {unknown} вызовов с неизвестными токенами · {hidden} событий скрыто",
+        "uk": "Локальна аналітика: {event_count} подій у {file} · {unknown} викликів з невідомими токенами · {hidden} подій приховано",
+        "en": "Local analytics: {event_count} events in {file} · {unknown} unknown-token calls · {hidden} fixture events hidden",
+    },
+    "statistics_provenance_notice": {
+        "ru": "Провайдеры показаны как сохранённые технические ID: например openrouter, omniroute или google.",
+        "uk": "Провайдери показані як збережені технічні ID: наприклад openrouter, omniroute або google.",
+        "en": "Providers are shown as saved technical IDs, for example openrouter, omniroute, or google.",
+    },
+    "statistics_show_fixture_events": {
+        "ru": "Показывать тестовые/фикстурные события",
+        "uk": "Показувати тестові/фікстурні події",
+        "en": "Show fixture/test events",
+    },
+    "statistics_clear_store_button": {
+        "ru": "Очистить локальное хранилище аналитики",
+        "uk": "Очистити локальне сховище аналітики",
+        "en": "Clear local analytics store",
+    },
+    "statistics_clear_store_confirm": {
+        "ru": "Я понимаю, что это удалит все локальные события аналитики",
+        "uk": "Я розумію, що це видалить усі локальні події аналітики",
+        "en": "I understand this deletes all local analytics events",
+    },
+    "statistics_clear_store_done": {
+        "ru": "Локальное хранилище аналитики очищено.",
+        "uk": "Локальне сховище аналітики очищено.",
+        "en": "Local analytics store cleared.",
+    },
+    "statistics_metric_total_runs": {
+        "ru": "Всего запусков",
+        "uk": "Усього запусків",
+        "en": "Total runs",
+    },
+    "statistics_metric_success_rate": {
+        "ru": "Доля успеха",
+        "uk": "Частка успіху",
+        "en": "Success rate",
+    },
+    "statistics_metric_workflows": {
+        "ru": "Рабочие процессы",
+        "uk": "Робочі процеси",
+        "en": "Workflows",
+    },
+    "statistics_metric_cache_hit_rate": {
+        "ru": "Доля попаданий в кэш",
+        "uk": "Частка потраплянь у кеш",
+        "en": "Cache hit rate",
+    },
+    "statistics_metric_total_urls": {
+        "ru": "Всего URL",
+        "uk": "Усього URL",
+        "en": "Total URLs",
+    },
+    "statistics_metric_total_keywords": {
+        "ru": "Всего ключевых слов",
+        "uk": "Усього ключових слів",
+        "en": "Total keywords",
+    },
+    "statistics_metric_total_rows": {
+        "ru": "Всего строк",
+        "uk": "Усього рядків",
+        "en": "Total rows",
+    },
+    "statistics_metric_total_llm_calls": {
+        "ru": "Всего вызовов LLM",
+        "uk": "Усього викликів LLM",
+        "en": "Total LLM calls",
+    },
+    "statistics_metric_total_tokens": {
+        "ru": "Всего токенов",
+        "uk": "Усього токенів",
+        "en": "Total tokens",
+    },
+    "statistics_col_provider": {
+        "ru": "Провайдер",
+        "uk": "Провайдер",
+        "en": "Provider",
+    },
+    "statistics_col_model": {
+        "ru": "Модель",
+        "uk": "Модель",
+        "en": "Model",
+    },
+    "statistics_col_calls": {
+        "ru": "Вызовы",
+        "uk": "Виклики",
+        "en": "Calls",
+    },
+    "statistics_col_success": {
+        "ru": "Успех",
+        "uk": "Успіх",
+        "en": "Success",
+    },
+    "statistics_col_errors": {
+        "ru": "Ошибки",
+        "uk": "Помилки",
+        "en": "Errors",
+    },
+    "statistics_col_tokens": {
+        "ru": "Токены",
+        "uk": "Токени",
+        "en": "Tokens",
+    },
+    "statistics_col_latency": {
+        "ru": "Задержка",
+        "uk": "Затримка",
+        "en": "Latency",
+    },
+    "statistics_heatmap_title": {
+        "ru": "Тепловая карта активности по времени",
+        "uk": "Теплова карта активності за часом",
+        "en": "Activity heatmap by time",
+    },
+    "statistics_funnel_title": {
+        "ru": "Воронка по режимам",
+        "uk": "Воронка за режимами",
+        "en": "Funnel by workflow",
+    },
+    "statistics_export_button": {
+        "ru": "Экспорт статистики",
+        "uk": "Експорт статистики",
+        "en": "Export statistics",
+    },
+    "statistics_export_providers": {
+        "ru": "Экспорт: поставщики",
+        "uk": "Експорт: постачальники",
+        "en": "Export: providers",
+    },
+    "statistics_export_funnel": {
+        "ru": "Экспорт: воронка",
+        "uk": "Експорт: воронка",
+        "en": "Export: funnel",
+    },
+    "statistics_export_heatmap": {
+        "ru": "Экспорт: тепловая карта",
+        "uk": "Експорт: теплова карта",
+        "en": "Export: heatmap",
+    },
+    "statistics_export_tokens": {
+        "ru": "Экспорт: токены",
+        "uk": "Експорт: токени",
+        "en": "Export: tokens",
+    },
+    "insight_provider_share": {
+        "ru": "{provider} используется для {pct}% вызовов LLM",
+        "uk": "{provider} використовується для {pct}% викликів LLM",
+        "en": "{provider} is used for {pct}% of LLM calls",
+    },
+    "insight_url_llm_peak": {
+        "ru": "Пик URL_LLM в {weekday} {hour}:00",
+        "uk": "Пік URL_LLM у {weekday} {hour}:00",
+        "en": "URL_LLM runs peak on {weekday} {hour}:00",
+    },
+    "insight_cache_hit_rate": {
+        "ru": "{pct}% запросов SERP попадают в кэш",
+        "uk": "{pct}% запитів SERP потрапляють у кеш",
+        "en": "{pct}% of SERP requests are cache hits",
+    },
+    "insight_peak_time": {
+        "ru": "Пик активности приходится на {weekday}, {hour}:00 ({count} событий)",
+        "uk": "Пік активності припадає на {weekday}, {hour}:00 ({count} подій)",
+        "en": "Peak activity falls on {weekday}, {hour}:00 ({count} events)",
+    },
+    "statistics_weekday_0": {
+        "ru": "Пн",
+        "uk": "Пн",
+        "en": "Mon",
+    },
+    "statistics_weekday_1": {
+        "ru": "Вт",
+        "uk": "Вт",
+        "en": "Tue",
+    },
+    "statistics_weekday_2": {
+        "ru": "Ср",
+        "uk": "Ср",
+        "en": "Wed",
+    },
+    "statistics_weekday_3": {
+        "ru": "Чт",
+        "uk": "Чт",
+        "en": "Thu",
+    },
+    "statistics_weekday_4": {
+        "ru": "Пт",
+        "uk": "Пт",
+        "en": "Fri",
+    },
+    "statistics_weekday_5": {
+        "ru": "Сб",
+        "uk": "Сб",
+        "en": "Sat",
+    },
+    "statistics_weekday_6": {
+        "ru": "Вс",
+        "uk": "Нд",
+        "en": "Sun",
+    },
+    "statistics_funnel_stage_submitted": {
+        "ru": "Отправлено",
+        "uk": "Надіслано",
+        "en": "Submitted",
+    },
+    "statistics_funnel_stage_scrape_prepared": {
+        "ru": "Скрейп подготовлен",
+        "uk": "Скрейп підготовано",
+        "en": "Scrape prepared",
+    },
+    "statistics_funnel_stage_llm_completed": {
+        "ru": "LLM завершен",
+        "uk": "LLM завершено",
+        "en": "LLM completed",
+    },
+    "statistics_funnel_stage_url_seed_completed": {
+        "ru": "URL-seed завершен",
+        "uk": "URL-seed завершено",
+        "en": "URL seed completed",
+    },
+    "statistics_funnel_stage_serp_completed": {
+        "ru": "SERP завершен",
+        "uk": "SERP завершено",
+        "en": "SERP completed",
+    },
+    "statistics_funnel_stage_ads_completed": {
+        "ru": "Ads завершен",
+        "uk": "Ads завершено",
+        "en": "Ads completed",
+    },
+    "statistics_funnel_stage_trends_completed": {
+        "ru": "Trends завершен",
+        "uk": "Trends завершено",
+        "en": "Trends completed",
+    },
+    "statistics_funnel_stage_crawl_completed": {
+        "ru": "Crawl завершен",
+        "uk": "Crawl завершено",
+        "en": "Crawl completed",
+    },
+    "statistics_funnel_stage_seo_completed": {
+        "ru": "SEO завершен",
+        "uk": "SEO завершено",
+        "en": "SEO completed",
+    },
+    "statistics_col_workflow": {
+        "ru": "Режим",
+        "uk": "Режим",
+        "en": "Workflow",
+    },
+    "statistics_col_count": {
+        "ru": "Количество",
+        "uk": "Кількість",
+        "en": "Count",
+    },
+    "statistics_col_stage": {
+        "ru": "Этап",
+        "uk": "Етап",
+        "en": "Stage",
+    },
+    "statistics_patterns_repeated_inputs": {
+        "ru": "Повторяющихся сигнатур ввода",
+        "uk": "Повторюваних сигнатур вводу",
+        "en": "Repeated input signatures",
+    },
+    "statistics_patterns_repeated_keywords": {
+        "ru": "Повторяющихся сигнатур ключевых слов",
+        "uk": "Повторюваних сигнатур ключових слів",
+        "en": "Repeated keyword signatures",
+    },
+    "statistics_metric_prompt_tokens": {
+        "ru": "Токены запроса",
+        "uk": "Токени запиту",
+        "en": "Prompt tokens",
+    },
+    "statistics_metric_completion_tokens": {
+        "ru": "Токены ответа",
+        "uk": "Токени відповіді",
+        "en": "Completion tokens",
+    },
 }
 
 # --- UI refresh ---
@@ -3471,7 +3957,7 @@ SUPPORTED_LANGUAGES = {"ru", "uk", "en"}
 # Key Semantic Blocks: block_i18n_translations_dict_data, block_i18n_lookup_lang_resolve
 # Critical Flows: every UI component calls t() for display strings
 # Verification: V-SUITE
-# CHANGE_SUMMARY: Added module-level contracts; replaced module docstring with GRACE header; added FUNCTION_CONTRACT blocks for get_lang and t; removed post-declaration docstrings
+# CHANGE_SUMMARY: Added module-level contracts; replaced module docstring with GRACE header; added FUNCTION_CONTRACT blocks for get_lang and t; removed post-declaration docstrings; statistics-workflow Task 2: added analytics sidebar labels + statistics dashboard labels + insight templates (workflow_mode_statistics, analytics_*, statistics_*, insight_*) in ru/uk/en
 # FUNCTION_CONTRACT: get_lang
 # Purpose: Resolve the current UI language from session state with a safe default
 # Input: (none)

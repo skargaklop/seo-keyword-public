@@ -17,7 +17,7 @@ from types import ModuleType
 # Key Semantic Blocks: none.
 # Critical Flows: load translations -> format localized pipeline messages -> assert expected strings.
 # Verification: verification-plan.xml#V-MOD-205, verification-plan.xml#V-09-I18N, verification-plan.xml#V-10-I18N
-# CHANGE_SUMMARY: Added GRACE module contract linking this test file to MOD-008.
+# CHANGE_SUMMARY: Added GRACE module contract linking this test file to MOD-008. PHASE-20 Task 3 added tracked-serp-math-statistics i18n presence test.
 
 try:
     import streamlit as st
@@ -115,6 +115,41 @@ class TestPipelineI18n:
             "scraper_dependency_status_header",
             "scraper_dependencies_missing_prompt",
             "scraper_install_scope_label",
+            # Task 2: analytics + statistics dashboard/settings keys (no insight templates).
+            "workflow_mode_statistics",
+            "analytics_section_title",
+            "analytics_enabled_label",
+            "analytics_retention_label",
+            "analytics_max_events_label",
+            "analytics_capture_tokens_label",
+            "analytics_capture_repeated_terms_label",
+            "statistics_overview_title",
+            "statistics_time_tab",
+            "statistics_providers_tab",
+            "statistics_tokens_tab",
+            "statistics_patterns_tab",
+            "statistics_events_tab",
+            "statistics_insights_tab",
+            "statistics_empty_message",
+            "statistics_metric_total_runs",
+            "statistics_metric_success_rate",
+            "statistics_metric_workflows",
+            "statistics_metric_cache_hit_rate",
+            "statistics_metric_total_urls",
+            "statistics_metric_total_keywords",
+            "statistics_metric_total_rows",
+            "statistics_metric_total_llm_calls",
+            "statistics_metric_total_tokens",
+            "statistics_col_provider",
+            "statistics_col_model",
+            "statistics_col_calls",
+            "statistics_col_success",
+            "statistics_col_errors",
+            "statistics_col_tokens",
+            "statistics_col_latency",
+            "statistics_heatmap_title",
+            "statistics_funnel_title",
+            "statistics_export_button",
         ]
 
         for key in expected_keys:
@@ -235,3 +270,31 @@ class TestPipelineI18n:
             assert "одну" in text or "одне" in text or "several" in text or "несколько" in text or "кілька" in text, (
                 f"keyword_llm_input_placeholder for {lang} must allow several keywords per line"
             )
+
+    # Purpose: PHASE-20 Task 3: tracked SERP/math statistics i18n keys must exist in ru/uk/en.
+    def test_tracked_serp_math_statistics_i18n_keys_present(self) -> None:
+        tracked_keys = [
+            "seo_math_tracked_websites",
+            "seo_math_tracked_websites_help",
+            "seo_math_tracked_search_queries",
+            "seo_math_tracked_search_queries_help",
+            "seo_math_track_serp_math_statistics",
+            "seo_math_track_serp_math_statistics_help",
+            "statistics_serp_tracking_tab",
+            "statistics_serp_top_websites",
+            "statistics_serp_tracked_queries",
+            "statistics_serp_top_keywords",
+            "statistics_serp_top_results",
+            "statistics_export_serp_tracking",
+            "statistics_tokens_unknown_message",
+            "statistics_tokens_empty_message",
+            "statistics_provider_empty_message",
+            "statistics_processed_empty_message",
+        ]
+        for key in tracked_keys:
+            assert key in TRANSLATIONS, f"Missing i18n key '{key}'"
+            for lang in ("ru", "uk", "en"):
+                assert lang in TRANSLATIONS[key], f"Key '{key}' missing {lang}"
+                assert isinstance(TRANSLATIONS[key][lang], str) and TRANSLATIONS[key][lang], (
+                    f"Key '{key}' empty for {lang}"
+                )

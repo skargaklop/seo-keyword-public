@@ -8,6 +8,7 @@ from app import (
     EXACT_STATE_KEYS,
     WORKFLOW_MODE_CRAWL_REPORT,
     WORKFLOW_MODE_SERP_ANALYSIS,
+    WORKFLOW_MODE_STATISTICS,
     WORKFLOW_MODE_TRENDS,
     WORKFLOW_MODES,
 )
@@ -256,7 +257,9 @@ def test_serp_mode_in_workflow_modes():
     assert WORKFLOW_MODE_CRAWL_REPORT in WORKFLOW_MODES
     assert WORKFLOW_MODE_TRENDS == "google_trends"
     assert WORKFLOW_MODE_TRENDS in WORKFLOW_MODES
-    assert len(WORKFLOW_MODES) == 7
+    assert WORKFLOW_MODE_STATISTICS == "statistics"
+    assert WORKFLOW_MODE_STATISTICS in WORKFLOW_MODES
+    assert len(WORKFLOW_MODES) == 8
 
 
 # ---------------------------------------------------------------------------
