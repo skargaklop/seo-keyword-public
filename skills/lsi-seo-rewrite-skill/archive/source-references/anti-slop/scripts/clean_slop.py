@@ -6,7 +6,6 @@ AI Slop Cleaner - Automatically removes common AI-generated content patterns fro
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 
 class SlopCleaner:
@@ -104,7 +103,7 @@ class SlopCleaner:
             old_text = text
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
             if text != old_text:
-                self.changes_made.append(f"Removed meta-commentary")
+                self.changes_made.append("Removed meta-commentary")
 
         return text
 
@@ -154,17 +153,6 @@ class SlopCleaner:
 
     def _fix_redundant_qualifiers(self, text: str) -> str:
         """Remove redundant qualifiers."""
-        patterns = [
-            r'\bcompletely finish(?:ed)?\b',
-            r'\babsolutely essential\b',
-            r'\btotally unique\b',
-            r'\bvery unique\b',
-            r'\bpast history\b',
-            r'\bfuture plans\b',
-            r'\bend result\b',
-            r'\bfinal outcome\b',
-        ]
-
         replacements = {
             r'\bcompletely finish(?:ed)?\b': 'finished',
             r'\babsolutely essential\b': 'essential',
@@ -187,13 +175,6 @@ class SlopCleaner:
     def _remove_empty_intensifiers(self, text: str) -> str:
         """Remove overused empty intensifiers."""
         # Only remove in specific contexts where they're clearly filler
-        patterns = [
-            r'\breally important\b',
-            r'\bvery important\b',
-            r'\bquite literally\b',
-            r'\bactually,?\s(?!not|the|a)\b',  # Remove filler "actually"
-        ]
-
         replacements = {
             r'\breally important\b': 'important',
             r'\bvery important\b': 'important',
@@ -205,7 +186,7 @@ class SlopCleaner:
             old_text = text
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
             if text != old_text:
-                self.changes_made.append(f"Removed empty intensifier")
+                self.changes_made.append("Removed empty intensifier")
 
         return text
 

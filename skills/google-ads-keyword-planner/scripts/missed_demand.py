@@ -16,7 +16,6 @@ import argparse
 import csv
 import itertools
 import json
-import os
 import sys
 import urllib.request
 import urllib.error
