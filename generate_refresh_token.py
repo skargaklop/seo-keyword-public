@@ -24,16 +24,31 @@ def _bi(en: str, ru: str) -> str:
 try:
     from google_auth_oauthlib.flow import InstalledAppFlow
 except ImportError:
-    print(_bi("[ERROR] google-auth-oauthlib is not installed.", "[ОШИБКА] google-auth-oauthlib не установлен."))
-    print(_bi("        Install with: pip install google-auth-oauthlib", "        Установите: pip install google-auth-oauthlib"))
-    sys.exit(1)
+    InstalledAppFlow = None
 
 try:
     from dotenv import load_dotenv
 except ImportError:
-    print(_bi("[ERROR] python-dotenv is not installed.", "[ОШИБКА] python-dotenv не установлен."))
-    print(_bi("        Install with: pip install python-dotenv", "        Установите: pip install python-dotenv"))
-    sys.exit(1)
+    load_dotenv = None
+
+
+# FUNCTION_CONTRACT: _require_runtime_dependencies
+# Purpose: Fail with bilingual setup guidance only when the interactive OAuth flow is executed.
+# Input: (none)
+# Output: None when required optional dependencies are importable or test-injected.
+# Side Effects: Prints dependency installation guidance and exits the process on missing runtime dependencies.
+# Business Rules: Keep module import side-effect-free so pytest can monkeypatch InstalledAppFlow.
+# Failure Modes: Raises SystemExit(1) when google-auth-oauthlib or python-dotenv is unavailable at runtime.
+# LINKS: verification-plan.xml#V-12-REFRESH-TOKEN-TESTS
+def _require_runtime_dependencies() -> None:
+    if InstalledAppFlow is None:
+        print(_bi("[ERROR] google-auth-oauthlib is not installed.", "[ОШИБКА] google-auth-oauthlib не установлен."))
+        print(_bi("        Install with: pip install google-auth-oauthlib", "        Установите: pip install google-auth-oauthlib"))
+        sys.exit(1)
+    if load_dotenv is None:
+        print(_bi("[ERROR] python-dotenv is not installed.", "[ОШИБКА] python-dotenv не установлен."))
+        print(_bi("        Install with: pip install python-dotenv", "        Установите: pip install python-dotenv"))
+        sys.exit(1)
 # FUNCTION_CONTRACT: _mask_secret
 # Purpose: Implement the  mask secret helper for this module.
 # Input: secret (str), visible_tail (int = 6)
@@ -57,6 +72,7 @@ def _mask_secret(secret: str, visible_tail: int = 6) -> str:
 # Failure Modes: Propagates upstream exceptions and existing fallback paths.
 # LINKS: requirements.xml#UC-001
 def main() -> None:
+    _require_runtime_dependencies()
     env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     load_dotenv(env_path)
 
