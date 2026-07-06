@@ -4,7 +4,7 @@ description: |
   Export and analyze search terms that triggered ads in Google Ads account.
   Includes sync and batch modes with cache/resume support.
   Triggers: google ads search terms, search term view, gaql search terms,
-  поисковые запросы google ads, анализ запросов рекламы, search term report.
+  google ads search queries, ad query analysis, search term report.
 ---
 
 # google-ads-search-terms
@@ -45,16 +45,16 @@ Standalone copied scripts can still read `config/.env` for local debugging, but 
 1. **ASK user about date range:**
 
    ```text
-   "За какой период выгрузить поисковые запросы?
-   - Последние 30 дней (по умолчанию)
-   - Конкретный диапазон (какой?)"
+   "For what period should I export search queries?
+   - Last 30 days (default)
+   - Specific range (which one?)"
    ```
 
 2. **ASK about campaign scope:**
 
    ```text
-   "Все кампании или конкретные?
-   Если конкретные — укажите ID или названия."
+   "All campaigns or specific ones?
+   If specific — please provide IDs or names."
    ```
 
 ### After getting answers
@@ -160,7 +160,7 @@ Rows contain:
 - For MCC, set `GOOGLE_ADS_LOGIN_CUSTOMER_ID`.
 - Old Yandex script names are kept as compatibility wrappers.
 - `--csv` exports UTF-8 with BOM, semicolon-delimited (for Russian Excel).
-- **Windows**: PowerShell может блокировать запуск `.ps1` скриптов по умолчанию. Выполните один раз:
+- **Windows**: PowerShell might block running `.ps1` scripts by default. Run this once:
 
   ```powershell
   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
@@ -169,36 +169,36 @@ Rows contain:
 ## Example Session
 
 ```text
-User: Покажи поисковые запросы за январь по всем кампаниям
+User: Show search queries for January across all campaigns
 
-Claude: Проверяю доступ к аккаунту...
+Claude: Checking account access...
         bash scripts/auth_check.sh
         → Auth check completed successfully.
 
-        Выгружаю все поисковые запросы за январь...
+        Exporting all search queries for January...
         bash scripts/search_terms_batch.sh \
           --date-from 2026-01-01 --date-to 2026-01-31 \
           --all-campaigns --step-days 7 --csv january_terms.csv
 
-        Готово! Найдено 1247 запросов.
+        Done! Found 1247 queries.
 
-        Топ по показам:
-        | # | Запрос | Кампания | Показы | Клики | Стоимость |
-        |---|--------|----------|--------|-------|-----------|
-        | 1 | купить дымоход | Brand | 580 | 45 | 12500000 |
-        | 2 | сэндвич дымоход цена | Generic | 340 | 28 | 8900000 |
-        | 3 | дымоход для бани | Seasonal | 290 | 22 | 6700000 |
+        Top by impressions:
+        | # | Query | Campaign | Impressions | Clicks | Cost |
+        |---|-------|----------|-------------|--------|------|
+        | 1 | buy chimney | Brand | 580 | 45 | 12500000 |
+        | 2 | sandwich chimney price | Generic | 340 | 28 | 8900000 |
+        | 3 | chimney for bathhouse | Seasonal | 290 | 22 | 6700000 |
 
-        ❌ Нерелевантные запросы (рекомендую добавить в минус-слова):
-        - "чистка дымохода" — сервисный запрос
-        - "дымоход своими руками" — DIY
+        ❌ Irrelevant queries (recommend adding to negative keywords):
+        - "chimney cleaning" — service query
+        - "DIY chimney" — DIY
 
-        Полная выгрузка сохранена: january_terms.csv
+        Full export saved: january_terms.csv
 ```
 
 ### Key Points
 
-1. **ВСЕГДА спрашивай период и жди ответа**
-2. **ВСЕГДА уточняй scope кампаний**
-3. **Анализируй нерелевантные запросы и предлагай минус-слова**
-4. **Используй `--csv` для экспорта данных**
+1. **ALWAYS ask for the period and wait for an answer**
+2. **ALWAYS clarify the scope of campaigns**
+3. **Analyze irrelevant queries and suggest negative keywords**
+4. **Use `--csv` to export data**

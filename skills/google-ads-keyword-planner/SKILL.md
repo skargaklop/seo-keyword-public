@@ -4,7 +4,7 @@ description: |
   Keyword research and demand estimation via Google Ads Keyword Plan Idea Service.
   Use for keyword ideas, historical metrics, monthly volume dynamics, geo target lookup, and missed demand analysis.
   Triggers: keyword planner, google ads keywords, search demand, missed demand,
-  подбор ключевых слов google, семантика google, keyword ideas, частотность google, упущенный спрос.
+  google keyword research, google semantics, keyword ideas, google search volume, missed demand.
 ---
 
 # google-ads-keyword-planner
@@ -107,18 +107,18 @@ Look at search results:
 1. **ASK user about region and WAIT for answer:**
 
    ```text
-   "Для какого региона анализировать спрос?
-   - Весь мир / конкретная страна?
-   - Конкретный город (какой?)"
+   "For which region should I analyze the demand?
+   - Worldwide / specific country?
+   - Specific city (which one?)"
    ```
 
-   **НЕ ПРОДОЛЖАЙ пока пользователь не ответит!**
+   **DO NOT CONTINUE until the user answers!**
 
 2. **ASK about business goal:**
 
    ```text
-   "Что именно вы продаёте/рекламируете?
-   Это важно для фильтрации нецелевых запросов."
+   "What exactly are you selling/promoting?
+   This is important to filter out non-target queries."
    ```
 
 ### After getting answers
@@ -224,7 +224,7 @@ Each script has a Bash (`.sh`) and PowerShell (`.ps1`) version.
 - `GOOGLE_ADS_API_VERSION` defaults to `v22`.
 - For MCC, set `GOOGLE_ADS_LOGIN_CUSTOMER_ID`.
 - Old Yandex script names are kept as compatibility wrappers and map to Google Ads scripts.
-- **Windows**: PowerShell может блокировать запуск `.ps1` скриптов по умолчанию. Выполните один раз:
+- **Windows**: PowerShell might block running `.ps1` scripts by default. Run this once:
 
   ```powershell
   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
@@ -239,43 +239,43 @@ Each script has a Bash (`.sh`) and PowerShell (`.ps1`) version.
 ## Example Session
 
 ```text
-User: Найди запросы для рекламы дымоходов
+User: Find queries for chimney advertising
 
-Claude: Для какого региона анализировать спрос?
-        И уточните — вы продаёте готовые дымоходы или
-        материалы для их изготовления/утепления?
+Claude: For which region should I analyze the demand?
+        And please specify — do you sell ready-made chimneys or
+        materials for their manufacture/insulation?
 
-User: США, продаём готовые сэндвич-дымоходы
+User: USA, we sell ready-made sandwich chimneys
 
-Claude: [Ищет geo target]
+Claude: [Finds geo target]
         bash scripts/geo_lookup.sh --query "United States"
         → 2840 | United States | Country
 
-        [Проверяет доступ]
+        [Checks access]
         bash scripts/health_check.sh
         → Health check completed successfully.
 
-        [Генерирует идеи]
+        [Generates ideas]
         bash scripts/keyword_ideas.sh --seed "buy chimney" --seed "sandwich chimney" --geo-ids 2840 --language-id 1000
 
-        Нашёл запросы. Проверяю интент через веб-поиск...
+        Found queries. Checking intent via web search...
 
-        ✅ ЦЕЛЕВЫЕ (покупают дымоходы):
+        ✅ TARGET (buying chimneys):
         - "sandwich chimney pipe" — 1200 avg/mo, Competition: HIGH
         - "chimney pipe buy online" — 680 avg/mo, Competition: MEDIUM
 
-        ❌ НЕ ЦЕЛЕВЫЕ (покупают другое):
-        - "chimney insulation wrap" — ищут утеплитель, не дымоход
-        - "chimney repair near me" — сервисный запрос, не покупка
-        - "how to install chimney" — DIY, информационный запрос
+        ❌ NON-TARGET (buying something else):
+        - "chimney insulation wrap" — looking for insulation, not a chimney
+        - "chimney repair near me" — service query, not a purchase
+        - "how to install chimney" — DIY, informational query
 
-        [Проверяет помесячную динамику для целевых]
+        [Checks monthly dynamics for target queries]
         bash scripts/search_volume.sh --keyword "sandwich chimney pipe" --geo-ids 2840 --months 12
 ```
 
 ### Key Points
 
-1. **ВСЕГДА спрашивай регион и жди ответа**
-2. **ВСЕГДА уточняй что именно продаёт клиент**
-3. **ВСЕГДА проверяй интент через WebSearch**
-4. **Разделяй отчёт на целевые/нецелевые с объяснением**
+1. **ALWAYS ask for the region and wait for an answer**
+2. **ALWAYS clarify what exactly the client is selling**
+3. **ALWAYS verify intent via WebSearch**
+4. **Separate the report into target/non-target with an explanation**

@@ -1,6 +1,6 @@
 ---
 name: seo-eeat-ymyl-google
-description: Применяй, когда нужен site-wide аудит по Google Search Quality Rater Guidelines с фокусом на E-E-A-T, YMYL, Page Quality и Needs Met для медицинских, финансовых/transactional и обычных контентных сайтов со scorecard-first output.
+description: Apply when a site-wide audit according to Google Search Quality Rater Guidelines is needed with a focus on E-E-A-T, YMYL, Page Quality, and Needs Met for medical, financial/transactional, and standard content sites with a scorecard-first output.
 ---
 
 # SEO E-E-A-T YMYL Google
@@ -21,74 +21,74 @@ Do not use `seos-cli` when local HTML, WebFetch, a subagent scrape, reputation r
 
 ## Overview
 
-QRG-first skill для site-wide аудита качества, доверия и риска по Google Search Quality Rater Guidelines 2025.
+QRG-first skill for site-wide quality, trust, and risk audit according to Google Search Quality Rater Guidelines 2025.
 
-Основной принцип: сначала hard-gates и доказательства, потом `Page Quality`, потом E-E-A-T scorecard. `Needs Met` оценивается только при наличии query context.
+Core principle: hard-gates and evidence first, then `Page Quality`, then E-E-A-T scorecard. `Needs Met` is evaluated only if a query context is available.
 
-## Когда применять
+## When to apply
 
-- Нужен аудит сайта или выборки URL по `E-E-A-T`, `YMYL`, `Page Quality`, `trust`, `reputation`, `harm`.
-- Нужно отделить low-trust YMYL/transaction pages от обычных информационных страниц.
-- Нужно собрать `scorecard-first` отчет, а не narrative без метрик.
-- Нужно быстро повторяемо извлечь on-page сигналы перед ручным judgment.
+- A site audit or URL sample audit is needed for `E-E-A-T`, `YMYL`, `Page Quality`, `trust`, `reputation`, `harm`.
+- Need to separate low-trust YMYL/transaction pages from standard informational pages.
+- Need to generate a `scorecard-first` report, not a narrative without metrics.
+- Need to quickly and repeatedly extract on-page signals before manual judgment.
 
-Не применять как crawl-heavy технический аудит. Для leak/proxy модели, graph scoring и массового краулинга использовать другие skills.
+Do not use as a crawl-heavy technical audit. For leak/proxy models, graph scoring, and massive crawling, use other skills.
 
-## Discovery-сценарии
+## Discovery scenarios
 
-- Медицинский сайт: проверка YMYL-рисков, trust-сигналов, автора и review-процесса.
-- Финансовый/transactional сайт: проверка safety, прозрачности транзакций и customer-service trust signals.
-- Обычный контентный сайт без явного YMYL: проверка полезности, качества контента и базового доверия.
+- Medical site: check YMYL-risks, trust-signals, author, and review process.
+- Financial/transactional site: check safety, transaction transparency, and customer-service trust signals.
+- Standard content site without obvious YMYL: check usefulness, content quality, and basic trust.
 
-## Ожидаемый вход
+## Expected input
 
-- Домен или список URL.
-- При наличии: query или query-cluster для `Needs Met`.
-- При необходимости: локальные HTML-файлы для выборочной проверки.
+- Domain or list of URLs.
+- If available: query or query-cluster for `Needs Met`.
+- If necessary: local HTML files for selective checking.
 
 ## Workflow
 
-1. Определи тип сайта и `YMYL Tier`: `Non-YMYL | Possible YMYL | Clear YMYL`.
-2. Собери выборку из 5 URL: homepage, money/service/product, informational, trust/about/contact/author, highest-risk YMYL or transaction.
-3. Для webfetch, scraping, внешнего поиска репутации и массового чтения страниц сначала вызывай субагента.
-4. Пройди hard-gates: harmful purpose, deceptive purpose/design, scaled low-value content, reputation abuse, hidden/blocked main content, unsafe sensitive-data requests, untrustworthy YMYL claims.
-5. При необходимости запусти `scripts/extract_eeat_signals.py`, чтобы получить компактный JSON по страницам.
-6. Присвой `Page Quality`: `Lowest | Low | Medium | High | Highest`.
-7. Заполни E-E-A-T scorecard: `Experience`, `Expertise`, `Authoritativeness`, `Trustworthiness`, `Overall E-E-A-T`.
-8. Если есть query context, отдельно оцени `Needs Met`.
-9. Сформируй итоговый отчет по `references/output-contract.md`. При желании используй `scripts/render_scorecard.py` только для prefill шаблона, не для финального judgment.
+1. Determine the site type and `YMYL Tier`: `Non-YMYL | Possible YMYL | Clear YMYL`.
+2. Collect a sample of 5 URLs: homepage, money/service/product, informational, trust/about/contact/author, highest-risk YMYL or transaction.
+3. For webfetch, scraping, external reputation search, and mass page reading, invoke a subagent first.
+4. Pass hard-gates: harmful purpose, deceptive purpose/design, scaled low-value content, reputation abuse, hidden/blocked main content, unsafe sensitive-data requests, untrustworthy YMYL claims.
+5. If necessary, run `scripts/extract_eeat_signals.py` to get a compact JSON for the pages.
+6. Assign `Page Quality`: `Lowest | Low | Medium | High | Highest`.
+7. Fill out the E-E-A-T scorecard: `Experience`, `Expertise`, `Authoritativeness`, `Trustworthiness`, `Overall E-E-A-T`.
+8. If there is a query context, evaluate `Needs Met` separately.
+9. Generate the final report according to `references/output-contract.md`. If desired, use `scripts/render_scorecard.py` only to prefill the template, not for final judgment.
 
-Обязательные правила:
+Mandatory rules:
 
-- `Page Quality` и `Needs Met` не смешивать.
-- Если query context отсутствует, для `Needs Met` ставить `N/A`.
-- hard-gate findings могут принудительно понижать итог независимо от формального score.
-- Явно различать `Experience` и `Expertise`; в high-risk YMYL не подменять формальную компетентность личным опытом.
-- `scripts/render_scorecard.py` можно использовать только для prefill и нормализации структуры, но не для автоматического verdicting.
+- Do not mix `Page Quality` and `Needs Met`.
+- If query context is missing, set `N/A` for `Needs Met`.
+- hard-gate findings can forcefully lower the result regardless of the formal score.
+- Explicitly distinguish `Experience` and `Expertise`; in high-risk YMYL, do not substitute formal expertise with personal experience.
+- `scripts/render_scorecard.py` can be used only for prefill and structure normalization, but not for automatic verdicting.
 
-## Что читать
+## What to read
 
-- `references/qrg-page-quality.md`: hard-gates и логика `Page Quality`.
+- `references/qrg-page-quality.md`: hard-gates and `Page Quality` logic.
 - `references/ymyl-thresholds.md`: `YMYL Tier`, trust requirements, `experience vs expertise`.
-- `references/eeat-scorecard-model.md`: rubric для E-E-A-T scoring.
-- `references/needs-met-and-intent.md`: когда и как использовать `Needs Met`.
-- `references/qrg-metric-catalog.md`: полный metric register, который обязан попасть в отчет.
-- `references/output-contract.md`: обязательные секции, формат evidence и wording rules.
+- `references/eeat-scorecard-model.md`: rubric for E-E-A-T scoring.
+- `references/needs-met-and-intent.md`: when and how to use `Needs Met`.
+- `references/qrg-metric-catalog.md`: full metric register that must be included in the report.
+- `references/output-contract.md`: mandatory sections, evidence format, and wording rules.
 
 ## Lite Scripts
 
 `scripts/extract_eeat_signals.py`
-- Извлекает on-page сигналы из URL или локальных HTML.
-- Возвращает компактный JSON для scorecard prep.
+- Extracts on-page signals from URLs or local HTML.
+- Returns a compact JSON for scorecard prep.
 
 `scripts/render_scorecard.py`
-- Рендерит markdown-заготовку отчета и evidence matrix.
-- Не принимает окончательные решения вместо агента.
+- Renders the markdown report template and evidence matrix.
+- Does not make final decisions instead of the agent.
 
-## Правила языка и контекста
+## Language and context rules
 
-- Основной текст skill-а, reference-файлов, шаблонов и отчета писать на русском.
-- Английские термины использовать только как стандартные метки: `E-E-A-T`, `YMYL`, `Page Quality`, `Needs Met`, `Lowest`, `Highest`, `Person schema`.
-- Не делать bilingual-дубли.
-- Длинные scraping/webfetch/reputation-heavy этапы отдавать субагенту; основной агент получает только сжатую сводку, extracted signals и findings.
-- Локально оставлять decision-making, scorecard сборку и финальный report synthesis.
+- Write the main text of the skill, reference files, templates, and report in English.
+- Use English terms only as standard labels: `E-E-A-T`, `YMYL`, `Page Quality`, `Needs Met`, `Lowest`, `Highest`, `Person schema`.
+- Do not create bilingual duplicates.
+- Delegate long scraping/webfetch/reputation-heavy stages to a subagent; the main agent receives only a compressed summary, extracted signals, and findings.
+- Keep decision-making, scorecard assembly, and final report synthesis local.
