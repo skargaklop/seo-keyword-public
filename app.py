@@ -1334,7 +1334,7 @@ def main() -> None:
             record_processed_dimensions_event(
                 run_id=run_id,
                 workflow_mode=selected_mode,
-                processed_data=st.session_state.get("processed_data") or {},
+                processed_data=st.session_state.get("processed_data"),
                 source="workflow_completed",
             )
             _recorded_events.add(_completed_key)

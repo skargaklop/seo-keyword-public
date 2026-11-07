@@ -1084,7 +1084,13 @@ def record_processed_dimensions_event(
         analytics_cfg = load_config().get("analytics", {})
         if not analytics_cfg.get("enabled", True):
             return False
-        if not processed_data:
+        if processed_data is None:
+            return False
+        if isinstance(processed_data, pd.DataFrame) and processed_data.empty:
+            return False
+        if not isinstance(processed_data, (pd.DataFrame, dict, list)):
+            return False
+        if isinstance(processed_data, dict) and not processed_data:
             return False
 
         # PHASE-20 / STEP-2002: per-event bound is config-driven. Caller may inject config
